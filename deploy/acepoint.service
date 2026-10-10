@@ -1,17 +1,20 @@
 [Unit]
 Description=AcePoint 羽毛球手势计分系统
-Documentation=https://github.com/  https://localhost:8080
+Documentation=https://github.com/blurth/piggy-acepoint
 # multi-user.target 并不保证 USB 摄像头枚举完成，冷启动时 UVC 设备晚一两秒
 # 出现是常见现象。程序自己会容忍少一路（采样率不变，见 engine.run），
 # 但仍然建议留出时间给 udev 把设备节点建好。
-After=multi-user.target
-Wants=multi-user.target
+After=systemd-udev-trigger.service
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
 User=pi
 WorkingDirectory=/home/pi/AcePoint
+# 给冷启动 USB 摄像头枚举留出时间；此延时并不保证所有设备就绪。
+ExecStartPre=/bin/sleep 5
 ExecStart=/home/pi/scorer/bin/acepoint -c /home/pi/AcePoint/config.pi.toml
+Environment=PYTHONUNBUFFERED=1
 
 Restart=always
 RestartSec=5
@@ -21,8 +24,6 @@ RestartSec=5
 # 无网络、只读根文件系统的球场设备，进了 failed 状态只能拔 SD 卡救。
 # 更糟的是失败后 Pi 空转约 0.5A，正落在充电宝自动断电的小电流区间，
 # 现场会表现成"充电宝坏了"。所以这里明确取消启动限流：永不放弃。
-StartLimitIntervalSec=0
-StartLimitBurst=0
 
 # 只读根文件系统下日志进 journald 的易失存储，拔电即丢。
 # 想留现场记录见 deploy/README.md 里的"持久化日志"一节。
