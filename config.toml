@@ -1,0 +1,87 @@
+# AcePoint 开发/联调配置
+#   视频源：两段录制视频（videos/A.mp4 = 左半场，videos/B.mp4 = 右半场）
+#   显示：网页记分牌（http://localhost:8080）替代 LED 点阵屏
+# 上树莓派实机时改用 config.pi.toml
+
+[recognition]
+model_path = "models/gesture_recognizer.task"
+min_confidence = 0.6                  # 需求 §5.2；球馆光线差可降到 0.5
+min_hand_detection_confidence = 0.5
+num_hands = 2
+per_source_recognizer = true          # 每路一个实例。实机同样必须是 true，共用实例
+                                      # 会让跟踪状态串味（Thumb_Down 检出掉 77%，需求 §6 v1.1）
+
+[capture]
+poll_hz = 10                          # 总轮询频率，两路各分到 5fps
+width = 1920                          # 两路摄像头实测可稳定 1080p MJPG
+height = 1080
+# 识别区。MediaPipe 内部把它统一缩到 192x192，所以决定认不认得出的是
+# **手占识别区长边的比例**，不是绝对像素数：占 33% 检出 98%，占 8% 掉到 73%，
+# 占 4% 直接归零（而整帧缩到 90x160、手只剩 34px 时仍有 97%）。
+#
+# 下面这组是**默认值**，按 A.mp4 标定；取景完全不同的源在 [[sources]] 里各自覆盖。
+# A.mp4（真实球场实拍 1920x1080）：人工逐帧核对出 13 次
+# 球员刻意做给镜头的手势，坐标全落在 x 541~1511、y 289~438，重心 (870,363) ——
+# 比画面中心 (960,540) 高了 177px，因为人是把手举到头旁边的，画面下半部全是地板。
+# 实测同一份素材跑真实管线，13 次真手势能触发几次：
+#     居中 0.60x0.80（长边1152）  1/13     整帧 1.00x1.00（长边1920）  0/13
+#     居中 0.40x0.47（长边 768）  3/13     偏置 0.40x0.27（长边 768）  9/13
+# 后两行长边一样、手占比一样，差别只有识别区中心在哪 —— 中心比大小重要得多。
+crop_w_ratio = 0.40                   # 768px 宽
+crop_h_ratio = 0.27                   # 292px 高
+crop_cx_ratio = 0.47                  # 识别区中心 (900, 363)，对准球员举手的位置
+crop_cy_ratio = 0.34
+
+[scoring]
+hold_seconds = 0.5                    # 加分(Victory/Pointing_Up) / 撤销(Thumb_Down) 保持时长
+                                      # 实测依据：真人自然做手势约保持 0.5~1.6s(中位 0.67s)，
+                                      # 5fps 采样下只有 3~4 个采样点，要求 0.8s 成功率仅 9%
+hold_grace_seconds = 0.4              # 保持期间容忍手势丢检多久(约 2 个采样点)。
+                                      # 配合 hold_seconds=0.5，实测成功率 91%
+hold_min_samples = 2                  # 必须真正识别到几次才算数。只有容忍窗口没有这条的话，
+                                      # 手势闪现一次就能凑够时长触发，实测误触率 98%
+reset_hold_seconds = 3.0              # Open_Palm 清零保持时长
+cooldown_seconds = 5.0                # 计分后该半场冷却
+
+[game]
+enabled = true                        # 关掉就是纯计分器，不判胜负
+target = 21                           # 先到 21 分
+win_by = 2                            # 且领先 >=2 分
+cap = 30                              # 29:29 后先到 30 者直接获胜（不再要求领先 2 分）
+# 分出胜负后本局冻结：加分被忽略（防庆祝时误触），撤销仍可用（最后一分误加时能撤回），
+# 张开手掌 3 秒清零开下一局。不做自动归零 —— 计分后还有冷却期比它更长，
+# 一旦自动清掉，误判的那一局就再也撤不回来了。
+
+[display]
+backends = ["web", "console"]
+
+[display.web]
+host = "127.0.0.1"                    # 想用手机看就改 "0.0.0.0"
+port = 8080                           # 被占用就 acepoint --port 8081
+preview = true
+preview_width = 480
+preview_quality = 60
+allow_manual = true                   # 网页上的 +1/-1/清零 按钮
+
+[[sources]]
+side = "left"
+kind = "video"
+path = "videos/A.mp4"
+loop = true
+realtime = true                       # 按视频真实 fps 对齐挂钟时间，保证"保持1秒"是真的1秒
+mirror = false
+
+[[sources]]
+side = "right"
+kind = "video"
+path = "videos/B.mp4"
+loop = true
+realtime = true
+mirror = false
+# B 是手持竖屏自拍(720x1280)，人就在镜头前，手本来就占满画面 —— 整帧不裁最好。
+# 套用 [capture] 里按 A 标定的 0.40x0.27@(0.47,0.34) 会把它裁成 288x345 的偏置小窗，
+# 实测直接从 5 次计分掉到 0/482 个采样点。取景不同就必须各配各的。
+crop_w_ratio = 1.0
+crop_h_ratio = 1.0
+crop_cx_ratio = 0.5
+crop_cy_ratio = 0.5

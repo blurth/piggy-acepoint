@@ -1,0 +1,81 @@
+# AcePoint 树莓派 4 实机配置
+#   视频源：两个 USB 摄像头（ls /dev/video* 确认设备号，一般是 0 和 2）
+#   显示：MAX7219 8x32 点阵屏（需先 raspi-config 开启 SPI）
+# 阶段1 只接一个摄像头时，把下面 right 那段 [[sources]] 注释掉即可
+
+[recognition]
+model_path = "models/gesture_recognizer.task"
+min_confidence = 0.6
+min_hand_detection_confidence = 0.5
+num_hands = 2
+per_source_recognizer = true          # 每路一个实例。需求 §6 原本写的是共用一个省内存，
+                                      # 但实测双路交替喂帧时，VIDEO 模式的手部跟踪状态会
+                                      # 互相污染：Thumb_Down 检出率掉 77%，整体只有 88% 一致。
+                                      # 代价是多约 70MB（283MB -> 352MB），2GB 的 Pi 吃得下。
+
+[capture]
+poll_hz = 10
+width = 1920                          # 必须是摄像头支持的 MJPEG 分辨率
+height = 1080
+crop_w_ratio = 0.6                    # 识别区：画面中央 60% x 80%（需求 §5.2）
+crop_h_ratio = 0.8
+crop_cx_ratio = 0.5                   # 识别区中心，0.5/0.5 = 画面正中
+crop_cy_ratio = 0.5
+# 上面四个值**必须上机后重标**，尤其是中心。开发用的 config.toml 已经不是居中了：
+# 真实球场素材里球员把手举到头旁边，13 次真手势的重心比画面中心高 177px，
+# 居中裁只认出 1/13，把中心挪上去认出 9/13（长边不变）。网柱机位同理 ——
+# 相机装在网高(约 1.55m)、球员举手在 2m 上下，手势也会偏在画面上半部。
+# 标定办法：录一段真实比划，跑 scripts/compare_roi.py --ratios 扫中心和大小。
+
+[scoring]
+hold_seconds = 0.5                    # 加分(Victory/Pointing_Up) / 撤销(Thumb_Down) 保持时长
+hold_grace_seconds = 0.4              # 保持期间容忍手势丢检多久(约 2 个采样点)
+hold_min_samples = 2                  # 必须真正识别到几次才算数(防单次闪现误触)。
+                                      # 球馆实测误加分偏多的话优先调高这个，而不是调 hold_seconds
+                                      # 这两个值由手持竖屏素材标定，上机后需用真实网前
+                                      # 横屏素材重新验证(需求 §10 阶段2)
+reset_hold_seconds = 3.0
+cooldown_seconds = 5.0                # 计分后该半场冷却
+
+[game]
+enabled = true                        # 关掉就是纯计分器，不判胜负
+target = 21
+win_by = 2
+cap = 30                              # 29:29 后先到 30 者直接获胜
+# 分出胜负后点阵屏在比分和 "L WIN"/"R WIN" 之间每 2 秒轮换，
+# 本局冻结（加分忽略、撤销可用），张开手掌 3 秒开下一局
+
+[display]
+backends = ["led", "console"]         # 想在手机上远程看比分就加 "web"
+
+[display.web]
+host = "0.0.0.0"
+port = 8080
+preview = false                       # Pi 上开预览会明显吃 CPU
+allow_manual = true
+
+[display.led]
+brightness = 60                       # 0~255，越高越费电
+cascaded = 4                          # 4 块 8x8：左右各两块，每边两位数字
+block_orientation = -90               # 显示乱码/倒置就调这个（0 / 90 / -90 / 180）
+rotate = 0
+reverse_blocks = false                # 左右装反了就改 true（取决于级联接线方向）
+show_match_point = true               # 赛点时在该侧底部画一条下划线
+bus_speed_hz = 8000000                # 花屏/乱码就降到 1000000（见 deploy/README.md）
+spi_port = 0
+spi_device = 0
+# 接好线先跑 acepoint --led-test -c config.pi.toml 标定方向
+# 布局：左半场两位数字占 0~15px，右半场占 16~31px，没有冒号的位置。
+# 分出胜负时获胜方的两位数字闪烁（塞不下 "WIN" 文字），另一侧保持常亮。
+
+[[sources]]
+side = "left"
+kind = "camera"
+device = 0
+mirror = false
+
+[[sources]]
+side = "right"
+kind = "camera"
+device = 2
+mirror = false

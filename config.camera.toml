@@ -1,0 +1,55 @@
+# Windows development configuration: two USB cameras and the web scoreboard.
+
+[recognition]
+model_path = "models/gesture_recognizer.task"
+min_confidence = 0.3
+min_hand_detection_confidence = 0.25
+num_hands = 2
+per_source_recognizer = true
+
+[capture]
+poll_hz = 16
+width = 1920
+height = 1080
+brightness = 255
+sharpness = 6
+crop_w_ratio = 0.6
+crop_h_ratio = 0.8
+crop_cx_ratio = 0.5
+crop_cy_ratio = 0.5
+
+[scoring]
+hold_seconds = 0.35
+hold_grace_seconds = 0.45
+hold_min_samples = 2
+reset_hold_seconds = 3.0
+cooldown_seconds = 5.0
+
+[game]
+enabled = true
+target = 21
+win_by = 2
+cap = 30
+
+[display]
+backends = ["web", "console"]
+
+[display.web]
+host = "127.0.0.1"
+port = 8080
+preview = true
+preview_width = 480
+preview_quality = 60
+allow_manual = true
+
+[[sources]]
+side = "left"
+kind = "camera"
+device = 0
+mirror = false
+
+[[sources]]
+side = "right"
+kind = "camera"
+device = 1
+mirror = false

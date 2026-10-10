@@ -1,0 +1,18 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.idea/
+.claude/
+.benchmarks/
+*.log
+camera_left.jpg
+camera_right.jpg
+
+# 模型和测试素材体积大，不进版本库
+models/*.task
+videos/*
+!videos/.gitkeep

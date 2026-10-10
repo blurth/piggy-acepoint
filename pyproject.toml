@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "acepoint"
+version = "0.1.0"
+description = "Badminton gesture scoring system (Raspberry Pi 4 + dual camera + LED matrix)"
+requires-python = ">=3.10"
+dependencies = [
+    "tomli>=2.0; python_version < '3.11'",
+    "mediapipe>=0.10.14",
+    "opencv-python>=4.8",
+    "numpy>=1.24",
+    "flask>=3.0",
+]
+
+[project.optional-dependencies]
+# Raspberry Pi only: MAX7219 LED matrix over SPI
+pi = ["luma.led-matrix>=1.7.0", "spidev>=3.6"]
+dev = ["pytest>=8.0", "psutil>=5.9"]     # psutil 供 scripts/profile_pipeline.py 看内存
+
+[project.scripts]
+acepoint = "acepoint.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+acepoint = ["displays/templates/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

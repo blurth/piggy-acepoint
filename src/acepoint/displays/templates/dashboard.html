@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AcePoint 记分牌</title>
+<style>
+  :root {
+    --bg: #0b0f14;
+    --panel: #141b23;
+    --line: #22303d;
+    --text: #e8eef4;
+    --muted: #7a8b9c;
+    --accent: #ffb020;
+    --ok: #34d399;
+    --warn: #f87171;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 20px; border-bottom: 1px solid var(--line); font-size: 13px;
+  }
+  .brand { font-weight: 700; letter-spacing: .14em; color: var(--accent); }
+  .conn { display: flex; align-items: center; gap: 8px; color: var(--muted); font-family: var(--mono); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+  .dot.live { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+
+  /* ---- 大比分：这块就是 LED 点阵屏的替身 ---- */
+  .board {
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+    gap: clamp(16px, 4vw, 56px); padding: clamp(20px, 5vh, 48px) 20px;
+    background: radial-gradient(circle at 50% 0%, #16202b 0%, var(--bg) 70%);
+  }
+  .board .num {
+    font-family: var(--mono); font-variant-numeric: tabular-nums;
+    font-size: clamp(72px, 20vw, 220px); line-height: .9; font-weight: 700;
+    text-align: center; color: var(--accent); text-shadow: 0 0 40px rgba(255,176,32,.25);
+  }
+  .board .sep { font-size: clamp(40px, 8vw, 96px); color: var(--line); font-family: var(--mono); }
+  .board .label { text-align: center; color: var(--muted); font-size: 13px; letter-spacing: .3em; margin-top: 12px; }
+  .mp { display: none; margin-top: 10px; text-align: center; }
+  .mp.show { display: block; }
+  .mp span { font-size: 12px; letter-spacing: .2em; padding: 3px 12px; border-radius: 999px;
+             background: rgba(255,176,32,.14); color: var(--accent); border: 1px solid var(--accent); }
+  .board.flash .num { animation: flash .6s steps(1, end) 2; }
+  @keyframes flash { 0%, 49% { opacity: 0; } 50%, 100% { opacity: 1; } }
+  .board.won .num { color: var(--muted); text-shadow: none; }
+  .board.won .num.win { color: var(--ok); text-shadow: 0 0 48px rgba(52,211,153,.35); }
+
+  /* ---- 分出胜负：横幅 + 开下一局 ---- */
+  .banner { display: none; text-align: center; padding: 0 20px 24px; }
+  .banner.show { display: block; }
+  .banner .title { font-size: clamp(22px, 5vw, 40px); font-weight: 700; color: var(--ok);
+                   letter-spacing: .1em; margin-bottom: 6px; }
+  .banner .sub { color: var(--muted); font-size: 14px; margin-bottom: 14px; }
+  .banner button { padding: 10px 28px; font-size: 15px; cursor: pointer; border-radius: 10px;
+                   background: var(--ok); color: #06251b; border: 0; font-weight: 700; }
+  .banner button:hover { filter: brightness(1.1); }
+
+  /* ---- 双半场状态 ---- */
+  .courts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; padding: 0 20px 20px; }
+  .court { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .court header { border-bottom: 1px solid var(--line); }
+  .court h2 { margin: 0; font-size: 14px; letter-spacing: .2em; }
+  .badge { font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .badge.on { color: var(--ok); border-color: var(--ok); }
+  .badge.off { color: var(--warn); border-color: var(--warn); }
+  .preview { display: block; width: 100%; aspect-ratio: 16/9; object-fit: contain; background: #000; }
+  .rows { padding: 12px 16px; display: grid; gap: 10px; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; }
+  .row span:first-child { color: var(--muted); }
+  .row span:last-child { font-family: var(--mono); }
+  .gesture { font-size: 18px; font-weight: 600; }
+  .gesture.armed { color: var(--accent); }
+  .gesture.blocked { color: var(--warn); }
+  .gesture small { font-size: 11px; font-weight: 400; color: var(--muted); margin-left: 6px; }
+  .bar { height: 8px; border-radius: 4px; background: #0b1218; overflow: hidden; border: 1px solid var(--line); }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .1s linear; }
+  .bar.cool > i { background: var(--warn); }
+  /* 素材播放进度：只有录制视频有，摄像头是实时流没有这个概念 */
+  .playback { display: none; padding: 0 16px 12px; }
+  .playback.show { display: block; }
+  .playback .bar { height: 4px; }
+  .playback .bar > i { background: #3b82f6; transition: none; }
+  .playback .meta { display: flex; justify-content: space-between; margin-top: 6px;
+                    font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .controls { display: flex; gap: 8px; padding: 0 16px 14px; }
+  .controls button {
+    flex: 1; padding: 8px; background: #0e1720; color: var(--text); cursor: pointer;
+    border: 1px solid var(--line); border-radius: 8px; font-family: var(--mono); font-size: 13px;
+  }
+  .controls button:hover { border-color: var(--accent); color: var(--accent); }
+  footer { margin-top: auto; padding: 10px 20px; border-top: 1px solid var(--line);
+           color: var(--muted); font-family: var(--mono); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">ACEPOINT</span>
+  <span class="conn"><i class="dot" id="dot"></i><span id="conn">连接中…</span></span>
+</header>
+
+<section class="board" id="board">
+  <div>
+    <div class="num" id="score-left">0</div>
+    <div class="label">左半场 LEFT</div>
+    <div class="mp" id="mp-left"><span>赛点</span></div>
+  </div>
+  <div class="sep">:</div>
+  <div>
+    <div class="num" id="score-right">0</div>
+    <div class="label">右半场 RIGHT</div>
+    <div class="mp" id="mp-right"><span>赛点</span></div>
+  </div>
+</section>
+
+<section class="banner" id="banner">
+  <div class="title" id="banner-title">本局结束</div>
+  <div class="sub">本局已冻结，加分不再生效；比分记错了可以用拇指向下撤销。</div>
+  <button id="next-game">开始下一局（清零）</button>
+</section>
+
+<section class="courts" id="courts"></section>
+
+<footer id="event">等待手势…</footer>
+
+<script>
+const PREVIEW = {{ 'true' if preview else 'false' }};
+const MANUAL = {{ 'true' if allow_manual else 'false' }};
+const SIDES = [["left", "左半场"], ["right", "右半场"]];
+const GESTURE_CN = {
+  Victory: "比耶 +1", Pointing_Up: "食指向上 +1",
+  Thumb_Down: "拇指向下 -1", Open_Palm: "张开手掌 清零",
+  Closed_Fist: "握拳", Thumb_Up: "拇指向上", ILoveYou: "ILY",
+};
+
+const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+const courts = document.getElementById("courts");
+for (const [side, name] of SIDES) {
+  const el = document.createElement("article");
+  el.className = "court";
+  el.id = "court-" + side;
+  el.innerHTML = `
+    <header><h2>${name}</h2><span class="badge" data-f="online">--</span></header>
+    ${PREVIEW ? `<img class="preview" src="/preview/${side}.mjpg" alt="${name}画面">` : ""}
+    <div class="playback" data-f="playback">
+      <div class="bar"><i></i></div>
+      <div class="meta"><span data-f="clock">0:00 / 0:00</span><span data-f="loops"></span></div>
+    </div>
+    <div class="rows">
+      <div class="row"><span>识别手势</span><span class="gesture" data-f="gesture">—</span></div>
+      <div class="bar" data-f="bar"><i></i></div>
+      <div class="row"><span>保持 / 需要</span><span data-f="hold">0.0 / 0.0 s</span></div>
+      <div class="row"><span>置信度</span><span data-f="conf">—</span></div>
+      <div class="row"><span>冷却</span><span data-f="cool">—</span></div>
+      <div class="row"><span>帧率 / 识别耗时</span><span data-f="fps">—</span></div>
+    </div>
+    ${MANUAL ? `<div class="controls">
+      <button data-side="${side}" data-action="increment">+1</button>
+      <button data-side="${side}" data-action="decrement">-1</button>
+      <button data-side="${side}" data-action="reset">清零</button>
+    </div>` : ""}`;
+  courts.appendChild(el);
+}
+
+if (MANUAL) {
+  courts.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-action]");
+    if (!btn) return;
+    fetch("/api/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ side: btn.dataset.side, action: btn.dataset.action }),
+    });
+  });
+}
+
+const board = document.getElementById("board");
+const banner = document.getElementById("banner");
+const field = (side, name) => document.querySelector(`#court-${side} [data-f="${name}"]`);
+let lastFlash = null;
+
+document.getElementById("next-game").addEventListener("click", () => {
+  fetch("/api/action", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ side: "left", action: "reset" }),
+  });
+});
+
+function render(state) {
+  const score = state.score || {};
+  document.getElementById("score-left").textContent = score.left ?? 0;
+  document.getElementById("score-right").textContent = score.right ?? 0;
+  document.title = `${score.text || "0:0"} · AcePoint`;
+  if (state.score?.last_event) document.getElementById("event").textContent = state.score.last_event;
+
+  if (lastFlash !== null && score.flash_seq !== lastFlash) {
+    board.classList.remove("flash");
+    void board.offsetWidth;              // 强制重排，让动画能重放
+    board.classList.add("flash");
+  }
+  lastFlash = score.flash_seq ?? null;
+
+  const mp = score.match_points || [];
+  document.getElementById("mp-left").classList.toggle("show", mp.includes("left"));
+  document.getElementById("mp-right").classList.toggle("show", mp.includes("right"));
+
+  const winner = score.winner || null;
+  board.classList.toggle("won", !!winner);
+  document.getElementById("score-left").classList.toggle("win", winner === "left");
+  document.getElementById("score-right").classList.toggle("win", winner === "right");
+  banner.classList.toggle("show", !!winner);
+  if (winner) {
+    const name = winner === "left" ? "左半场" : "右半场";
+    document.getElementById("banner-title").textContent =
+      `${name}获胜  ${score.left} : ${score.right}`;
+  }
+
+  for (const [side] of SIDES) {
+    const s = (state.sides || {})[side];
+    const online = field(side, "online");
+    if (!s) { online.textContent = "未启用"; online.className = "badge"; continue; }
+
+    online.textContent = s.online ? "在线" : "掉线";
+    online.className = "badge " + (s.online ? "on" : "off");
+
+    const cooling = s.cooldown_remaining > 0;
+
+    // 冷却期间状态机不累计手势，但识别器照常输出。要显示成「识别到了，
+    // 只是在冷却」，而不是空白 —— 否则看着像识别失灵。
+    const g = field(side, "gesture");
+    const shown = s.gesture || s.detected;
+    const label = shown ? (GESTURE_CN[shown] || shown) : "—";
+    g.innerHTML = label + (!s.gesture && s.detected ? "<small>冷却中，不计分</small>" : "");
+    g.className = "gesture" + (s.gesture && s.required > 0 ? " armed"
+                                : (s.detected && cooling ? " blocked" : ""));
+    const bar = field(side, "bar");
+    bar.className = "bar" + (cooling ? " cool" : "");
+    const total = s.cooldown_total || 1;
+    bar.firstElementChild.style.width =
+      (cooling ? 100 * s.cooldown_remaining / total : 100 * s.progress) + "%";
+
+    field(side, "hold").textContent = `${s.held.toFixed(1)} / ${s.required.toFixed(1)} s`;
+    field(side, "conf").textContent = s.confidence ? s.confidence.toFixed(2) : "—";
+    field(side, "cool").textContent = cooling ? `${s.cooldown_remaining.toFixed(1)} s` : "就绪";
+    field(side, "fps").textContent = `${s.fps.toFixed(1)} fps · ${s.recognize_ms.toFixed(0)} ms`;
+
+    // 播放进度只对录制视频有意义；实时摄像头 duration 恒为 0，整块隐藏
+    const playback = field(side, "playback");
+    playback.classList.toggle("show", s.duration > 0);
+    if (s.duration > 0) {
+      playback.querySelector("i").style.width = (100 * s.position / s.duration) + "%";
+      field(side, "clock").textContent = `${clock(s.position)} / ${clock(s.duration)}`;
+      field(side, "loops").textContent = s.loops > 0 ? `第 ${s.loops + 1} 遍` : "第 1 遍";
+    }
+  }
+}
+
+const dot = document.getElementById("dot");
+const conn = document.getElementById("conn");
+let source;
+function connect() {
+  source = new EventSource("/api/events");
+  source.onopen = () => { dot.classList.add("live"); conn.textContent = "已连接"; };
+  source.onmessage = (e) => render(JSON.parse(e.data));
+  source.onerror = () => {
+    dot.classList.remove("live"); conn.textContent = "断开，重连中…";
+    source.close(); setTimeout(connect, 1500);
+  };
+}
+render({{ initial | safe }});
+connect();
+</script>
+</body>
+</html>
