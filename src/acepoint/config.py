@@ -12,6 +12,7 @@ except ModuleNotFoundError:  # Python 3.10
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
+from acepoint.audio.config import AudioConfig
 
 SIDES = ("left", "right")
 
@@ -204,6 +205,7 @@ class DisplayConfig:
 
 @dataclass(frozen=True)
 class Config:
+    audio: AudioConfig = field(default_factory=AudioConfig)
     recognition: RecognitionConfig = field(default_factory=RecognitionConfig)
     capture: CaptureConfig = field(default_factory=CaptureConfig)
     scoring: ScoringConfig = field(default_factory=ScoringConfig)
@@ -270,6 +272,7 @@ def load_config(path: str | Path | None = None) -> Config:
         raise ConfigError(f"同一半场配置了多个视频源: {seen}")
 
     return Config(
+        audio=_build_audio(_section(data, "audio")),
         recognition=_build(RecognitionConfig, _section(data, "recognition"), "recognition"),
         capture=_build(CaptureConfig, _section(data, "capture"), "capture"),
         scoring=_build(ScoringConfig, _section(data, "scoring"), "scoring"),
@@ -308,3 +311,10 @@ def apply_overrides(
         sources = tuple(by_side[s] for s in SIDES if s in by_side)
 
     return replace(config, display=display, sources=sources)
+
+
+def _build_audio(data):
+    try:
+        return _build(AudioConfig, data, "audio")
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc

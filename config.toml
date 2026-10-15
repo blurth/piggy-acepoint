@@ -85,3 +85,14 @@ crop_w_ratio = 1.0
 crop_h_ratio = 1.0
 crop_cx_ratio = 0.5
 crop_cy_ratio = 0.5
+
+[audio]
+# 安装 pip install -e ".[audio]"，运行 acepoint --audio-test 试听后开启。
+enabled = false
+backend = "pygame"
+pack_root = "audio"
+style = "friends"
+mode = "balanced"
+volume = 0.6
+muted = false
+allow_web_control = true

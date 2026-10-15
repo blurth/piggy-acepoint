@@ -1,0 +1,677 @@
+[
+  {
+    "id": "friends_streak_3_0",
+    "style": "friends",
+    "event": "streak_3",
+    "text": "三连击！偷偷练了？",
+    "file": "friends/streak_3_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.057
+  },
+  {
+    "id": "friends_streak_3_1",
+    "style": "friends",
+    "event": "streak_3",
+    "text": "三连击！手感来了！",
+    "file": "friends/streak_3_1.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.045
+  },
+  {
+    "id": "friends_streak_3_2",
+    "style": "friends",
+    "event": "streak_3",
+    "text": "三连击！藏得挺深！",
+    "file": "friends/streak_3_2.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.129
+  },
+  {
+    "id": "friends_streak_5_0",
+    "style": "friends",
+    "event": "streak_5",
+    "text": "五连击！检查球拍！",
+    "file": "friends/streak_5_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.077
+  },
+  {
+    "id": "friends_streak_5_1",
+    "style": "friends",
+    "event": "streak_5",
+    "text": "五连击！拦不住了！",
+    "file": "friends/streak_5_1.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.911
+  },
+  {
+    "id": "friends_streak_5_2",
+    "style": "friends",
+    "event": "streak_5",
+    "text": "五连击！有点东西！",
+    "file": "friends/streak_5_2.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.992
+  },
+  {
+    "id": "friends_streak_7_0",
+    "style": "friends",
+    "event": "streak_7",
+    "text": "超神！今天你买单！",
+    "file": "friends/streak_7_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.201
+  },
+  {
+    "id": "friends_streak_7_1",
+    "style": "friends",
+    "event": "streak_7",
+    "text": "超神！还让不让人玩！",
+    "file": "friends/streak_7_1.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.306
+  },
+  {
+    "id": "friends_streak_7_2",
+    "style": "friends",
+    "event": "streak_7",
+    "text": "超神！球拍开光了！",
+    "file": "friends/streak_7_2.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.152
+  },
+  {
+    "id": "friends_shutdown_0",
+    "style": "friends",
+    "event": "shutdown",
+    "text": "终结！该我了！",
+    "file": "friends/shutdown_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.591
+  },
+  {
+    "id": "friends_shutdown_1",
+    "style": "friends",
+    "event": "shutdown",
+    "text": "终结！装完了吧！",
+    "file": "friends/shutdown_1.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.749
+  },
+  {
+    "id": "friends_shutdown_2",
+    "style": "friends",
+    "event": "shutdown",
+    "text": "终结！终于逮到你！",
+    "file": "friends/shutdown_2.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.052
+  },
+  {
+    "id": "friends_comeback_tie_0",
+    "style": "friends",
+    "event": "comeback_tie",
+    "text": "追平！刚才没开机！",
+    "file": "friends/comeback_tie_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.148
+  },
+  {
+    "id": "friends_comeback_tie_1",
+    "style": "friends",
+    "event": "comeback_tie",
+    "text": "追平！谁说要走？",
+    "file": "friends/comeback_tie_1.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.906
+  },
+  {
+    "id": "friends_comeback_tie_2",
+    "style": "friends",
+    "event": "comeback_tie",
+    "text": "追平！好戏来了！",
+    "file": "friends/comeback_tie_2.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.84
+  },
+  {
+    "id": "friends_comeback_lead_0",
+    "style": "friends",
+    "event": "comeback_lead",
+    "text": "反超！你还当真了？",
+    "file": "friends/comeback_lead_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.912
+  },
+  {
+    "id": "friends_comeback_lead_1",
+    "style": "friends",
+    "event": "comeback_lead",
+    "text": "反超！轮到我笑了！",
+    "file": "friends/comeback_lead_1.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.019
+  },
+  {
+    "id": "friends_comeback_lead_2",
+    "style": "friends",
+    "event": "comeback_lead",
+    "text": "反超！惊不惊喜？",
+    "file": "friends/comeback_lead_2.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.886
+  },
+  {
+    "id": "friends_icebreaker_0",
+    "style": "friends",
+    "event": "icebreaker",
+    "text": "破蛋！庆祝一下！",
+    "file": "friends/icebreaker_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.765
+  },
+  {
+    "id": "friends_icebreaker_1",
+    "style": "friends",
+    "event": "icebreaker",
+    "text": "开张！终于有了！",
+    "file": "friends/icebreaker_1.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.738
+  },
+  {
+    "id": "friends_icebreaker_2",
+    "style": "friends",
+    "event": "icebreaker",
+    "text": "破蛋！给点掌声！",
+    "file": "friends/icebreaker_2.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.81
+  },
+  {
+    "id": "friends_deuce_0",
+    "style": "friends",
+    "event": "deuce",
+    "text": "二十平！加班开始！",
+    "file": "friends/deuce_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.056
+  },
+  {
+    "id": "friends_deuce_1",
+    "style": "friends",
+    "event": "deuce",
+    "text": "二十平！谁也别走！",
+    "file": "friends/deuce_1.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.974
+  },
+  {
+    "id": "friends_deuce_2",
+    "style": "friends",
+    "event": "deuce",
+    "text": "二十平！继续加班！",
+    "file": "friends/deuce_2.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.98
+  },
+  {
+    "id": "friends_decider_0",
+    "style": "friends",
+    "event": "decider",
+    "text": "最后一球！赢了吹一年！",
+    "file": "friends/decider_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.367
+  },
+  {
+    "id": "friends_decider_1",
+    "style": "friends",
+    "event": "decider",
+    "text": "一球定胜负！别手抖！",
+    "file": "friends/decider_1.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.152
+  },
+  {
+    "id": "friends_decider_2",
+    "style": "friends",
+    "event": "decider",
+    "text": "决胜球！主角请就位！",
+    "file": "friends/decider_2.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.263
+  },
+  {
+    "id": "friends_match_point_0",
+    "style": "friends",
+    "event": "match_point",
+    "text": "赛点！嘴先闭上！",
+    "file": "friends/match_point_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.873
+  },
+  {
+    "id": "friends_match_point_1",
+    "style": "friends",
+    "event": "match_point",
+    "text": "赛点！手可别抖！",
+    "file": "friends/match_point_1.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.927
+  },
+  {
+    "id": "friends_match_point_2",
+    "style": "friends",
+    "event": "match_point",
+    "text": "赛点！稳住别浪！",
+    "file": "friends/match_point_2.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.814
+  },
+  {
+    "id": "friends_win_normal_0",
+    "style": "friends",
+    "event": "win_normal",
+    "text": "拿下！可以发群里了！",
+    "file": "friends/win_normal_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.23
+  },
+  {
+    "id": "friends_win_normal_1",
+    "style": "friends",
+    "event": "win_normal",
+    "text": "胜利！今晚你最靓！",
+    "file": "friends/win_normal_1.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.131
+  },
+  {
+    "id": "friends_win_normal_2",
+    "style": "friends",
+    "event": "win_normal",
+    "text": "拿下！掌声在哪里！",
+    "file": "friends/win_normal_2.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.191
+  },
+  {
+    "id": "friends_win_comeback_0",
+    "style": "friends",
+    "event": "win_comeback",
+    "text": "逆风翻盘！刚才谁笑最大声？",
+    "file": "friends/win_comeback_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.929
+  },
+  {
+    "id": "friends_win_comeback_1",
+    "style": "friends",
+    "event": "win_comeback",
+    "text": "逆转拿下！剧本都不敢这么写！",
+    "file": "friends/win_comeback_1.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.808
+  },
+  {
+    "id": "friends_win_comeback_2",
+    "style": "friends",
+    "event": "win_comeback",
+    "text": "翻盘成功！这波可以吹一年！",
+    "file": "friends/win_comeback_2.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.846
+  },
+  {
+    "id": "friends_win_dominant_0",
+    "style": "friends",
+    "event": "win_dominant",
+    "text": "比赛结束！友情是否结束，另行通知！",
+    "file": "friends/win_dominant_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 3.619
+  },
+  {
+    "id": "friends_win_dominant_1",
+    "style": "friends",
+    "event": "win_dominant",
+    "text": "拿下！这手感，建议续费！",
+    "file": "friends/win_dominant_1.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.782
+  },
+  {
+    "id": "friends_win_dominant_2",
+    "style": "friends",
+    "event": "win_dominant",
+    "text": "大胜！今天这顿，你请客！",
+    "file": "friends/win_dominant_2.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 2.768
+  },
+  {
+    "id": "friends_banter_0",
+    "style": "friends",
+    "event": "banter",
+    "text": "这球可以！",
+    "file": "friends/banter_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.818
+  },
+  {
+    "id": "friends_banter_1",
+    "style": "friends",
+    "event": "banter",
+    "text": "有点东西！",
+    "file": "friends/banter_1.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.8
+  },
+  {
+    "id": "friends_banter_2",
+    "style": "friends",
+    "event": "banter",
+    "text": "别飘，继续！",
+    "file": "friends/banter_2.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.19
+  },
+  {
+    "id": "friends_banter_3",
+    "style": "friends",
+    "event": "banter",
+    "text": "好球，再来！",
+    "file": "friends/banter_3.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.315
+  },
+  {
+    "id": "friends_banter_4",
+    "style": "friends",
+    "event": "banter",
+    "text": "稳住，能赢！",
+    "file": "friends/banter_4.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.197
+  },
+  {
+    "id": "friends_point_0",
+    "style": "friends",
+    "event": "point",
+    "text": "",
+    "file": "friends/point_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.075
+  },
+  {
+    "id": "clean_streak_3_0",
+    "style": "clean",
+    "event": "streak_3",
+    "text": "三连得分！",
+    "file": "clean/streak_3_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.962
+  },
+  {
+    "id": "clean_streak_5_0",
+    "style": "clean",
+    "event": "streak_5",
+    "text": "五连得分！",
+    "file": "clean/streak_5_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.876
+  },
+  {
+    "id": "clean_streak_7_0",
+    "style": "clean",
+    "event": "streak_7",
+    "text": "七连得分！",
+    "file": "clean/streak_7_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.926
+  },
+  {
+    "id": "clean_shutdown_0",
+    "style": "clean",
+    "event": "shutdown",
+    "text": "精彩反击！",
+    "file": "clean/shutdown_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.889
+  },
+  {
+    "id": "clean_comeback_tie_0",
+    "style": "clean",
+    "event": "comeback_tie",
+    "text": "追平比分！",
+    "file": "clean/comeback_tie_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.824
+  },
+  {
+    "id": "clean_comeback_lead_0",
+    "style": "clean",
+    "event": "comeback_lead",
+    "text": "成功反超！",
+    "file": "clean/comeback_lead_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.915
+  },
+  {
+    "id": "clean_icebreaker_0",
+    "style": "clean",
+    "event": "icebreaker",
+    "text": "拿下第一分！",
+    "file": "clean/icebreaker_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.996
+  },
+  {
+    "id": "clean_deuce_0",
+    "style": "clean",
+    "event": "deuce",
+    "text": "二十平！继续加油！",
+    "file": "clean/deuce_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.997
+  },
+  {
+    "id": "clean_decider_0",
+    "style": "clean",
+    "event": "decider",
+    "text": "决胜一分！",
+    "file": "clean/decider_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.859
+  },
+  {
+    "id": "clean_match_point_0",
+    "style": "clean",
+    "event": "match_point",
+    "text": "赛点，加油！",
+    "file": "clean/match_point_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.275
+  },
+  {
+    "id": "clean_win_normal_0",
+    "style": "clean",
+    "event": "win_normal",
+    "text": "恭喜获胜！",
+    "file": "clean/win_normal_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.954
+  },
+  {
+    "id": "clean_win_comeback_0",
+    "style": "clean",
+    "event": "win_comeback",
+    "text": "逆转获胜！",
+    "file": "clean/win_comeback_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.946
+  },
+  {
+    "id": "clean_win_dominant_0",
+    "style": "clean",
+    "event": "win_dominant",
+    "text": "精彩表现，恭喜获胜！",
+    "file": "clean/win_dominant_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.985
+  },
+  {
+    "id": "clean_banter_0",
+    "style": "clean",
+    "event": "banter",
+    "text": "好球，加油！",
+    "file": "clean/banter_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 1.295
+  },
+  {
+    "id": "clean_point_0",
+    "style": "clean",
+    "event": "point",
+    "text": "",
+    "file": "clean/point_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.075
+  },
+  {
+    "id": "effects_streak_3_0",
+    "style": "effects",
+    "event": "streak_3",
+    "text": "",
+    "file": "effects/streak_3_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.225
+  },
+  {
+    "id": "effects_streak_5_0",
+    "style": "effects",
+    "event": "streak_5",
+    "text": "",
+    "file": "effects/streak_5_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.225
+  },
+  {
+    "id": "effects_streak_7_0",
+    "style": "effects",
+    "event": "streak_7",
+    "text": "",
+    "file": "effects/streak_7_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.225
+  },
+  {
+    "id": "effects_shutdown_0",
+    "style": "effects",
+    "event": "shutdown",
+    "text": "",
+    "file": "effects/shutdown_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.15
+  },
+  {
+    "id": "effects_comeback_tie_0",
+    "style": "effects",
+    "event": "comeback_tie",
+    "text": "",
+    "file": "effects/comeback_tie_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.15
+  },
+  {
+    "id": "effects_comeback_lead_0",
+    "style": "effects",
+    "event": "comeback_lead",
+    "text": "",
+    "file": "effects/comeback_lead_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.15
+  },
+  {
+    "id": "effects_icebreaker_0",
+    "style": "effects",
+    "event": "icebreaker",
+    "text": "",
+    "file": "effects/icebreaker_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.15
+  },
+  {
+    "id": "effects_deuce_0",
+    "style": "effects",
+    "event": "deuce",
+    "text": "",
+    "file": "effects/deuce_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.15
+  },
+  {
+    "id": "effects_decider_0",
+    "style": "effects",
+    "event": "decider",
+    "text": "",
+    "file": "effects/decider_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.15
+  },
+  {
+    "id": "effects_match_point_0",
+    "style": "effects",
+    "event": "match_point",
+    "text": "",
+    "file": "effects/match_point_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.15
+  },
+  {
+    "id": "effects_win_normal_0",
+    "style": "effects",
+    "event": "win_normal",
+    "text": "",
+    "file": "effects/win_normal_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.3
+  },
+  {
+    "id": "effects_win_comeback_0",
+    "style": "effects",
+    "event": "win_comeback",
+    "text": "",
+    "file": "effects/win_comeback_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.3
+  },
+  {
+    "id": "effects_win_dominant_0",
+    "style": "effects",
+    "event": "win_dominant",
+    "text": "",
+    "file": "effects/win_dominant_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.3
+  },
+  {
+    "id": "effects_banter_0",
+    "style": "effects",
+    "event": "banter",
+    "text": "",
+    "file": "effects/banter_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.15
+  },
+  {
+    "id": "effects_point_0",
+    "style": "effects",
+    "event": "point",
+    "text": "",
+    "file": "effects/point_0.wav",
+    "source": "Windows System.Speech demo voice; procedural original tones",
+    "duration": 0.075
+  }
+]

@@ -14,6 +14,7 @@ import cv2
 import numpy as np
 
 from acepoint.config import Config
+from acepoint.audio.service import AudioService
 from acepoint.displays import build_display
 from acepoint.fsm import GestureFSM
 from acepoint.recognition import GestureReader, Observation
@@ -65,10 +66,14 @@ class ScoringEngine:
         self.fsms = {side: GestureFSM(side, config.scoring) for side in self.sources}
         # 每路各自的识别区（没单独配就是 [capture] 的）
         self.crops = {s.side: s.crop_for(config.capture) for s in config.sources}
+        self.audio = None
+        self._audio_controls = queue.Queue(maxsize=32)
         self.reader = None
         self.display = None
         try:
-            self.display = build_display(config, on_action=self._enqueue_manual)
+            self.audio = AudioService(config.audio, config.game, config.resolve(config.audio.pack_root))
+            self.display = build_display(config, on_action=self._enqueue_manual,
+                                         on_audio=self._enqueue_audio, audio_config=config.audio)
             self.display.start()
             self.reader = GestureReader(
                 config.recognition,
@@ -118,6 +123,7 @@ class ScoringEngine:
             while not self._stop:
                 for side, source in self.sources.items():
                     slice_start = time.monotonic()
+                    self._drain_audio()
                     self._drain_manual()
                     self._tick(side, source, slice_start)
                     self.display.update(self._telemetry())
@@ -139,6 +145,8 @@ class ScoringEngine:
 
     def close(self) -> None:
         """每一步各自兜异常：一个关不掉不能连累后面的都关不掉。"""
+        if getattr(self, "audio", None) is not None:
+            self._safely(self.audio.close, "关闭语音")
         for side, source in self.sources.items():
             self._safely(source.close, f"关闭视频源 {side}")
         if self.reader is not None:
@@ -207,7 +215,7 @@ class ScoringEngine:
                                       fresh=not repeated)
         if action is not None:
             before = self.board.snapshot().version
-            snapshot = self.board.apply(side, action)
+            snapshot = self._apply_score(side, action)
             if snapshot.version == before:
                 log.info("%s %s ignored — %s already won this game",
                          side, action.value, snapshot.winner)
@@ -251,6 +259,41 @@ class ScoringEngine:
 
     # -------------------------------------------------------------- 手动控制
 
+    def _apply_score(self, side, action, *, source="gesture"):
+        before, after = self.board.apply_with_change(side, action, source=source)
+        audio = getattr(self, "audio", None)
+        if audio is not None:
+            try:
+                audio.score(side, action, before, after)
+            except Exception:
+                log.exception("Audio event failed; scoring remains active")
+        return after
+
+    def set_score(self, left, right):
+        """Use this on the engine thread for score edits with audio enabled."""
+        snapshot = self.board.set_score(left, right)
+        if self.audio:
+            self.audio.set_score(snapshot)
+        return snapshot
+
+    def _enqueue_audio(self, body):
+        try:
+            self._audio_controls.put_nowait(body)
+        except queue.Full:
+            return False
+        return True
+
+    def _drain_audio(self):
+        for _ in range(32):
+            try:
+                body = self._audio_controls.get_nowait()
+            except queue.Empty:
+                break
+            if body == {"test": True}:
+                self.audio.preview(self.board.snapshot())
+            else:
+                self.audio.configure(body)
+
     def _enqueue_manual(self, side: str, action: Action) -> None:
         """网页线程调用；只入队，真正生效在主循环里，避免跨线程改状态机。"""
         self._manual.put((side, action))
@@ -261,7 +304,7 @@ class ScoringEngine:
                 side, action = self._manual.get_nowait()
             except queue.Empty:
                 return
-            snapshot = self.board.apply(side, action, source="manual")
+            snapshot = self._apply_score(side, action, source="manual")
             if side in self.fsms:
                 self.fsms[side].force_cooldown(time.monotonic())
             log.info("manual %s %s -> %s", side, action.value, snapshot.text)
@@ -277,7 +320,8 @@ class ScoringEngine:
             except Exception:                    # noqa: BLE001 - 遥测坏了也不能停计分
                 log.exception("[%s] 遥测采集失败", side)
                 sides[side] = SideStatus(side=side, online=False, detail="telemetry failed")
-        return Telemetry(snapshot=self.board.snapshot(), sides=sides)
+        return Telemetry(snapshot=self.board.snapshot(), sides=sides,
+                         audio=self.audio.snapshot() if getattr(self, "audio", None) else {})
 
     def _side_status(self, side: str, source: FrameSource, now: float) -> SideStatus:
         observation = self._last_obs[side]

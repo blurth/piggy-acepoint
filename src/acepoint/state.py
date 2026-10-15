@@ -101,9 +101,11 @@ class Telemetry:
 
     snapshot: Snapshot
     sides: dict[str, SideStatus] = field(default_factory=dict)
+    audio: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
+            "audio": self.audio,
             "score": self.snapshot.to_dict(),
             "sides": {k: v.to_dict() for k, v in self.sides.items()},
         }
@@ -121,7 +123,7 @@ class ScoreBoard:
     def __init__(self, game: GameConfig | None = None, *, min_score: int = 0) -> None:
         self.game = game or GameConfig()
         self._min = min_score
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._score = {"left": 0, "right": 0}
         self._version = 0
         self._flash_seq = 0
@@ -129,6 +131,13 @@ class ScoreBoard:
         self._updated_at = time.time()
         self._winner: str | None = None
         self._match_points: tuple[str, ...] = ()
+
+    def apply_with_change(self, side: str, action: Action, *, source: str = "gesture"):
+        """Atomically capture the before/after pair for commentary consumers."""
+        with self._lock:
+            before = self._snapshot_locked()
+            after = self.apply(side, action, source=source)
+            return before, after
 
     def apply(self, side: str, action: Action, *, source: str = "gesture") -> Snapshot:
         """执行一个计分动作，返回新的快照。RESET 会同时清零双方(需求 §5.1)。

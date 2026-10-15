@@ -21,6 +21,7 @@ from typing import Callable
 from flask import Flask, Response, jsonify, render_template, request
 
 from acepoint.config import WebConfig
+from acepoint.audio.config import AudioConfig, settings
 from acepoint.displays.base import Display
 from acepoint.state import Action, Snapshot, Telemetry
 
@@ -129,7 +130,11 @@ class WebDisplay(Display):
         config: WebConfig,
         *,
         on_action: Callable[[str, Action], None] | None = None,
+        on_audio=None,
+        audio_config=None,
     ) -> None:
+        self._audio_config = audio_config or AudioConfig()
+        self._on_audio = on_audio
         self.config = config
         self._on_action = on_action
         self._broker = _Broker()
@@ -271,6 +276,30 @@ class WebDisplay(Display):
                 mimetype="multipart/x-mixed-replace; boundary=acepoint",
                 headers={"Cache-Control": "no-cache"},
             )
+
+        @app.post("/api/audio/settings")
+        def api_audio_settings():
+            if not self._audio_config.allow_web_control or self._on_audio is None:
+                return jsonify(error="audio control disabled"), 403
+            body = request.get_json(silent=True)
+            try:
+                settings(self._audio_config, body)
+            except (ValueError, TypeError):
+                return jsonify(error="invalid audio settings"), 400
+            if not self._on_audio(body):
+                return jsonify(error="control queue full"), 429
+            return jsonify(ok=True), 202
+
+        @app.post("/api/audio/test")
+        def api_audio_test():
+            if not self._audio_config.allow_web_control or self._on_audio is None:
+                return jsonify(error="audio control disabled"), 403
+            state = self._state()
+            if state["score"]["left"] or state["score"]["right"]:
+                return jsonify(error="preview requires 0:0"), 409
+            if not self._on_audio({"test": True}):
+                return jsonify(error="control queue full"), 429
+            return jsonify(ok=True), 202
 
         @app.get("/healthz")
         def healthz():

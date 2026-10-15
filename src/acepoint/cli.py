@@ -45,6 +45,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--duration", type=float, default=None,
                         help="跑满这么多秒后自动退出（冒烟测试用）")
     parser.add_argument("--check", action="store_true", help="只做环境自检（真读帧、真开 SPI）")
+    parser.add_argument("--audio-test", action="store_true", help="离线语音试听，不加载摄像头或模型")
+    parser.add_argument("--audio-check", action="store_true", help="检查音频包和输出设备，不发声")
     parser.add_argument("--led-test", action="store_true",
                         help="点阵屏测试图案，用来标定 block_orientation / reverse_blocks")
     parser.add_argument("-v", "--verbose", action="store_true", help="打印 DEBUG 日志")
@@ -145,6 +147,9 @@ def check(config: Config, *, frames: int = 10) -> int:
     if "led" in config.display.backends:
         ok = _check_led(config) and ok
 
+    if config.audio.enabled:
+        ok = (check_audio(config) == 0) and ok
+
     print("\n自检" + ("通过" if ok else "未通过"))
     return 0 if ok else 1
 
@@ -185,7 +190,39 @@ def _check_led(config: Config) -> bool:
             pass
 
 
+def check_audio(config, *, preview=False):
+    """Independent pack/device check; preview is explicit and camera-free."""
+    from acepoint.audio.player import Pack, NullPlayer, PygamePlayer
+    import random
+    player = None
+    try:
+        pack = Pack(config.resolve(config.audio.pack_root))
+        player = (NullPlayer if config.audio.backend == "null" else PygamePlayer)(config.audio)
+        player.prepare(pack.clips)
+        print(f"[ok] audio: {len(pack.clips)} clips, backend={config.audio.backend}")
+        if preview:
+            if config.audio.muted or config.audio.volume == 0:
+                print("Audio muted; change audio.muted/volume before preview")
+                return 0
+            for event in ("streak_3", "shutdown", "decider", "win_normal"):
+                style = "effects" if config.audio.mode == "effects_only" else config.audio.style
+                clip = pack.choose(event, style, random.Random(), None)
+                print(clip["text"] or event)
+                player.play(clip, config.audio.volume)
+                time.sleep(clip["duration"] + 0.2)
+        return 0
+    except Exception as exc:
+        print(f"[FAIL] audio: {exc}; install with pip install -e \".[audio]\"")
+        return 1
+    finally:
+        if player is not None:
+            player.close()
+
+
 def main(argv: list[str] | None = None) -> int:
+    # Redirected Windows consoles may use an encoding without Chinese glyphs.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
     args = build_parser().parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -198,6 +235,9 @@ def main(argv: list[str] | None = None) -> int:
     except ConfigError as exc:
         print(f"配置错误: {exc}", file=sys.stderr)
         return 2
+
+    if args.audio_test or args.audio_check:
+        return check_audio(config, preview=args.audio_test)
 
     if args.led_test:
         try:

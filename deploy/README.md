@@ -87,6 +87,14 @@ python scripts/check_sampling.py -c config.pi.toml      # 按实测采样率复�
 
 ## 6. 开机自启
 
+### 可选语音播报
+
+安装 `pip install -e ".[pi,audio]"`，在服务实际使用的用户和音频输出设备上运行
+`acepoint --audio-check -c config.pi.toml`、`acepoint --audio-test -c config.pi.toml`。
+确认有声且音量合适后，再开启配置中的 `[audio].enabled`。3.5mm接口需接有源音箱。
+systemd运行环境与桌面登录环境的默认声卡／权限可能不同，必须实际验证；缺设备时音频降级，计分继续。
+增加音箱后重新测整机功耗及续航。网页调音需要启用web后端，详见[语音使用说明](../docs/语音播报使用说明.md)。
+
 ```bash
 sudo cp deploy/acepoint.service /etc/systemd/system/
 sudo systemctl daemon-reload
