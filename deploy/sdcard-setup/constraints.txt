@@ -1,0 +1,2 @@
+# 和开发机实测的版本保持一致；mediapipe 1.0.0 有 py3-none aarch64 安装包，Python 3.13 可装
+mediapipe==1.0.0

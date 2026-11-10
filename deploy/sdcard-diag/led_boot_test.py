@@ -185,10 +185,35 @@ def main_boot() -> int:
             log(f"已安排 {LATE_DELAY} 秒后追加 acepoint 服务日志")
         except Exception as exc:                                # noqa: BLE001
             log(f"安排追加日志失败: {exc!r}")
+        launch_setup(log)
         log("诊断完成")
     finally:
         log.close()
     return 0
+
+
+SETUP_SCRIPT = os.path.join(os.path.dirname(HERE), "acepoint-setup", "setup.sh")
+SETUP_DONE = "/var/lib/acepoint/setup.done"
+
+
+def launch_setup(log: Log) -> None:
+    """SD 卡上放了 acepoint-setup/ 且还没装成功过，就在后台启动安装（不阻塞开机）。"""
+    if not os.path.exists(SETUP_SCRIPT):
+        return
+    if os.path.exists(SETUP_DONE):
+        log(f"--- AcePoint 已安装过（{SETUP_DONE} 存在），跳过安装")
+        return
+    try:
+        out = subprocess.run(
+            ["systemd-run", "--unit=acepoint-setup", "--collect",
+             "--property=After=network-online.target",
+             "--property=Wants=network-online.target",
+             "/bin/sh", SETUP_SCRIPT],
+            capture_output=True, text=True, timeout=10)
+        log("--- 已在后台启动 AcePoint 安装，进度见 acepoint-setup/logs/")
+        log((out.stdout + out.stderr).strip())
+    except Exception as exc:                                    # noqa: BLE001
+        log(f"启动安装失败: {exc!r}")
 
 
 def main_late(path: str) -> int:
