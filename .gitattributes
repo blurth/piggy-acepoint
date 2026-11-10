@@ -1,0 +1,4 @@
+# 这些文件会被原样拷到树莓派上执行，CRLF 会让 /bin/sh 和 systemd 解析失败
+*.sh text eol=lf
+*.service text eol=lf
+deploy/sdcard-diag/* text eol=lf

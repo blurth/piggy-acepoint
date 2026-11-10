@@ -1,0 +1,21 @@
+AcePoint 开机诊断（不需要 SSH，全程只插拔 SD 卡）
+
+【装】
+1. 把本文件夹整个拷到 SD 卡启动分区，命名为 acepoint-diag
+2. 在启动分区的 cmdline.txt 那一行末尾（同一行，前面加一个空格）追加：
+   systemd.run=/boot/firmware/acepoint-diag/install.sh systemd.run_success_action=reboot systemd.run_failure_action=reboot systemd.unit=kernel-command-line.target
+3. 插回树莓派通电。第一次开机会装好诊断服务、自动把 cmdline.txt 改回去、再自动重启一次。
+
+【之后每次开机】屏上应依次出现（各 6 秒）：
+   CE0 全亮 -> CE0 棋盘格 -> 熄 2 秒 -> CE1 全亮 -> CE1 棋盘格 -> 熄
+   第一轮亮 = CS 接在 24 脚（正确）；只有第二轮亮 = CS 接在 26 脚
+   两轮都不亮 = 供电 / DIN-DOUT 接反 / 电平问题
+   开机后等 3 分钟再拔电，日志会更完整。
+
+【看日志】拔卡插电脑：acepoint-diag/logs/boot-NNNN.txt（编号最大的是最近一次）
+   install.log 是第一次安装的记录。
+
+【卸载】在树莓派上：sudo systemctl disable acepoint-diag
+   或者直接删掉 SD 卡上的 acepoint-diag 文件夹（服务找不到脚本就什么都不做）。
+
+【万一开不了机】把 cmdline.txt 末尾追加的那段删掉即可；备份在 cmdline.txt.bak。

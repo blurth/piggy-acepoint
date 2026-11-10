@@ -1,0 +1,13 @@
+[Unit]
+Description=AcePoint boot diagnostics (MAX7219 self-test, log to SD boot partition)
+After=local-fs.target systemd-modules-load.service
+# 排在计分服务前面独占 SPI；不被它依赖，诊断失败也不拦计分服务
+Before=acepoint.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /boot/firmware/acepoint-diag/led_boot_test.py
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target
