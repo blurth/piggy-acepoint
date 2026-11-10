@@ -1,0 +1,21 @@
+[Unit]
+Description=AcePoint 开机点阵屏自检（全亮 -> 棋盘格）
+Documentation=https://github.com/blurth/piggy-acepoint
+# 绕过 luma 直接写 MAX7219，开机时目视即可判断硬件是否正常：
+#   全亮 5 秒 -> 棋盘格 5 秒 -> 熄灭 -> acepoint 启动后显示 00 00
+#   全亮都没有 = 硬件问题（供电 / DIN 端 / CS 脚 / 电平）
+# 只排在 acepoint 前面、不被它依赖：自检失败也不会拦住计分服务。
+Before=acepoint.service
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/home/pi/AcePoint
+ExecStart=/home/pi/scorer/bin/python /home/pi/AcePoint/scripts/led_raw_test.py --seconds 5
+TimeoutStartSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=acepoint-ledtest
+
+[Install]
+WantedBy=multi-user.target

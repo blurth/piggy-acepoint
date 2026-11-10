@@ -47,6 +47,29 @@ acepoint --led-test -c config.pi.toml
 > 程序初始化时同步显示 `00 00`，随后加载手势模型。`--check` 仅确认 SPI 写入成功，
 > 请目视确认实际显示；接线、供电异常可能不会产生软件错误。
 
+### 屏完全不亮：绕过 luma 的底层自检
+
+MAX7219 上电默认 shutdown，全黑不代表坏。`scripts/led_raw_test.py` 直接写
+display-test 寄存器强制全亮，不依赖其他任何寄存器，能把硬件故障和软件故障分开：
+
+```bash
+sudo systemctl stop acepoint
+python scripts/led_raw_test.py               # CS 接 26 脚时加 --device 1
+```
+
+想每次开机都自检（无屏无键盘时目视判断），装一次即可：
+
+```bash
+sudo cp deploy/acepoint-ledtest.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable acepoint-ledtest
+```
+
+开机顺序：全亮 5 秒 → 棋盘格 5 秒 → 熄灭 → `acepoint` 起来后显示 `00 00`。
+全亮都没有就是硬件问题（供电、DIN/DOUT 接反、CS 脚、电平）。自检只排在
+`acepoint` 之前、不被它依赖，失败不影响计分服务；结果看
+`journalctl -u acepoint-ledtest -b`。排查完可 `sudo systemctl disable acepoint-ledtest`。
+
 ## 4. 摄像头自检
 
 ```bash
