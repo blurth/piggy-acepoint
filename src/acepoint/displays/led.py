@@ -28,6 +28,7 @@ log = logging.getLogger(__name__)
 _FLASH_TIMES = 2          # 计分生效闪烁 2 次（需求 §5.3）
 _FLASH_INTERVAL = 0.15
 _WIN_BLINK = 0.6          # 分出胜负后，获胜方的两位数字持续闪烁（塞不下 "WIN" 文字）
+_HOLD_MIN_PIXELS = 2      # 手势刚被认出、进度还是 0 时进度条的最短长度
 _TICK = 0.25              # 渲染线程的心跳，决定闪烁节奏的精度
 
 
@@ -37,6 +38,7 @@ class LedDisplay(Display):
     def __init__(self, config: LedConfig) -> None:
         self.config = config
         self._latest: Snapshot | None = None
+        self._hold: tuple[tuple[str, int], ...] = ()    # (半场, 进度条像素数)，只含正在保持的
         self._lock = threading.Lock()
         self._wake = threading.Event()
         self._stop = threading.Event()
@@ -85,9 +87,28 @@ class LedDisplay(Display):
                  self.config.cascaded, self.config.digits_per_side, self.config.brightness)
 
     def update(self, telemetry: Telemetry) -> None:
+        hold = self._hold_pixels(telemetry)
         with self._lock:
             self._latest = telemetry.snapshot
+            self._hold = hold
         self._wake.set()
+
+    def _hold_pixels(self, telemetry: Telemetry) -> tuple[tuple[str, int], ...]:
+        """各半场保持进度条该亮几个像素。
+
+        一认出计分手势就至少亮 `_HOLD_MIN_PIXELS` 个点（此时进度还是 0）——
+        这条线的首要作用是告诉球员"看见你了"，其次才是进度。
+        冷却期间状态机不累计手势（gesture 为 None），自然不亮。
+        """
+        if not self.config.show_hold_progress:
+            return ()
+        width = self.config.half_width
+        pixels = []
+        for side, status in sorted(telemetry.sides.items()):
+            if status.gesture and status.required > 0:
+                lit = max(_HOLD_MIN_PIXELS, round(min(1.0, status.progress) * width))
+                pixels.append((side, min(width, lit)))
+        return tuple(pixels)
 
     def close(self) -> None:
         self._stop.set()
@@ -162,6 +183,7 @@ class LedDisplay(Display):
             self._wake.clear()
             with self._lock:
                 snapshot = self._latest
+                hold = self._hold
             if snapshot is None:
                 continue
 
@@ -176,7 +198,7 @@ class LedDisplay(Display):
                 winner_lit, blink_at, dark = True, 0.0, None
 
             state = (snapshot.version, snapshot.left, snapshot.right,
-                     snapshot.match_points, dark)
+                     snapshot.match_points, dark, hold)
             if drawn is not None and snapshot.flash_seq != self._drawn_flash:
                 try:
                     self._flash(snapshot)
@@ -186,7 +208,7 @@ class LedDisplay(Display):
                     continue
             elif state != drawn:
                 try:
-                    self._draw(snapshot, dark=dark)
+                    self._draw(snapshot, dark=dark, hold=dict(hold))
                 except Exception:
                     log.exception("LED render failed; retrying on next update")
                     drawn = None
@@ -200,8 +222,13 @@ class LedDisplay(Display):
             self._draw(snapshot)
             time.sleep(_FLASH_INTERVAL)
 
-    def _draw(self, snapshot: Snapshot, *, dark: str | None = None) -> None:
-        """把左右比分画到各自的一半上。dark 指定哪一侧熄灭（闪烁用）。"""
+    def _draw(self, snapshot: Snapshot, *, dark: str | None = None,
+              hold: dict[str, int] | None = None) -> None:
+        """把左右比分画到各自的一半上。
+
+        dark  指定哪一侧熄灭（闪烁用）。
+        hold  正在保持手势的半场 -> 底部进度条的像素数。
+        """
         from luma.core.legacy import text
         from luma.core.legacy.font import CP437_FONT
         from luma.core.render import canvas
@@ -218,6 +245,11 @@ class LedDisplay(Display):
                 # 定宽字体 + 右对齐：个位永远在同一格，看着不跳
                 text(draw, (x, 0), f"{value:0{digits}d}"[-digits:],
                      fill="white", font=CP437_FONT)
-                if self.config.show_match_point and side in snapshot.match_points:
+                lit = (hold or {}).get(side, 0)
+                if lit > 0:
+                    # 保持进度条和赛点下划线共用最底下一行（数字只用到第 0~6 行）。
+                    # 保持期间只画进度条：赛点的整条下划线会把它盖住，看不出在涨。
+                    draw.line((x, 7, x + lit - 1, 7), fill="white")
+                elif self.config.show_match_point and side in snapshot.match_points:
                     # 塞不下文字，用底部一条下划线标赛点；静态不闪 —— 赛点时球还在打
                     draw.line((x, 7, x + half - 1, 7), fill="white")

@@ -12,9 +12,16 @@ per_source_recognizer = true          # 每路一个实例。需求 §6 原本�
                                       # 但实测双路交替喂帧时，VIDEO 模式的手部跟踪状态会
                                       # 互相污染：Thumb_Down 检出率掉 77%，整体只有 88% 一致。
                                       # 代价是多约 70MB（283MB -> 352MB），2GB 的 Pi 吃得下。
+parallel = true                       # 左右两路各占一个线程同时识别。Pi 4 实测单帧识别
+                                      # 157~219ms（推理是单线程的），左右轮流跑每路只有
+                                      # 2.5fps，而下面的防误触参数是按 5fps/路 标定的：
+                                      # 0.6 秒的手势触发率从 100% 掉到 50%。
 
 [capture]
 poll_hz = 10
+decode_on_demand = true               # 只解码真正要用的帧。相机出 30fps、每路只用 5fps，
+                                      # 两路 1080p MJPEG 全解码在 Pi 4 上白占一个多核。
+                                      # 相机表现异常（某半场离线、帧率掉到 1~2）就改回 false
 width = 1920                          # 必须是摄像头支持的 MJPEG 分辨率
 height = 1080
 crop_w_ratio = 0.6                    # 识别区：画面中央 60% x 80%（需求 §5.2）
@@ -61,7 +68,11 @@ block_orientation = -90               # 显示乱码/倒置就调这个（0 / 90
 rotate = 0
 reverse_blocks = false                # 左右装反了就改 true（取决于级联接线方向）
 show_match_point = true               # 赛点时在该侧底部画一条下划线
-bus_speed_hz = 8000000                # 花屏/乱码就降到 1000000（见 deploy/README.md）
+show_hold_progress = true             # 手势保持期间在该侧底部画一条随进度变长的横线，
+                                      # 一认出手势就亮 —— 不看网页时唯一的即时反馈
+bus_speed_hz = 500000                 # 实机实测：8MHz 下四块屏时亮时灭，0.5MHz 稳定。
+                                      # 根因是 3.3V 电平余量不足（见 deploy/README.md），
+                                      # 加了电平转换后可以再往上调
 spi_port = 0
 spi_device = 0
 # 接好线先跑 acepoint --led-test -c config.pi.toml 标定方向

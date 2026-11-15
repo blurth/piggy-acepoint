@@ -39,6 +39,7 @@ python scripts/compare_recognizer.py videos/B.mp4         # num_hands, per_sourc
 python scripts/profile_pipeline.py --resolution           # stage timings, RSS, resolution curve
 python scripts/check_sampling.py                          # phase sweep — mandatory after touching poll_hz or any hold_* value
 python scripts/explain_moment.py videos/B.mp4 14          # why a specific gesture did not score
+python scripts/record_camera.py -c config.pi.toml left    # record calibration footage from a configured source (on the device)
 ```
 
 Before treating "the gesture didn't register" as a recognition bug, run `explain_moment.py` — on rehearsal footage where gestures come back to back, the usual cause is the per-side cooldown, not detection. `SideStatus.detected` (recognizer output) is deliberately separate from `SideStatus.gesture` (what the FSM is accumulating) so the dashboard can tell those apart; the FSM clears `gesture` during cooldown.
@@ -49,7 +50,11 @@ Every parameter in `[scoring]`, `[capture]`, and `[recognition]` was set from th
 # Raspberry Pi
 pip install -e ".[pi]"                      # adds luma.led-matrix; SPI must be enabled first
 acepoint -c config.pi.toml
+bash deploy/pi_update.sh                    # on the device: pull, copy into ~/AcePoint, patch config keys, --check, restart
+curl -s localhost:8080/api/state            # per-side fps and recognize_ms — the numbers that say whether the Pi keeps up
 ```
+
+The Pi 4 cannot run mediapipe 1.x: its aarch64 wheel needs ARMv8 AES, which the BCM2711 lacks, so the process dies with SIGILL at startup. The device runs Python 3.12 (via uv) + mediapipe 0.10.18 — `deploy/pi4_mediapipe_fix.sh`. The dev machine is on 1.0.0; keep `recognition.py` on the `tasks` API that both versions share.
 
 Tuning parameters live in `config.toml` / `config.pi.toml` (spec §7) — never re-introduce module-level constants for them.
 
@@ -63,9 +68,13 @@ cli.py  →  Config (TOML)  →  ScoringEngine
    displays/ web.py | led.py | console.py ←── Telemetry (10 Hz)
 ```
 
-Recognition runs single-threaded in the main loop; every display backend owns its own thread. Left and right take turns holding a `1/poll_hz` time slice, so each side gets `poll_hz/2` fps (spec §6).
+By default recognition runs single-threaded in the main loop; every display backend owns its own thread. Left and right take turns holding a `1/poll_hz` time slice, so each side gets `poll_hz/2` fps (spec §6). With `recognition.parallel` (on in `config.pi.toml`) each side's read + recognition runs in its own thread and one beat lasts `2/poll_hz` — same per-side rate, no queueing behind the other side.
 
 Things that are easy to get wrong:
+
+- **Alternating recognition cannot hold the calibrated 5 fps per side on the Pi 4 — that is what `recognition.parallel` and `capture.decode_on_demand` are for.** MediaPipe inference is single-threaded on Linux; measured on the device it takes 157–219 ms per frame (21 ms on the dev machine), so alternating gave 2.5 fps per side with three cores idle. On the dev machine parallel cut a two-side beat from 34.8 ms to 23.9 ms (≈ the slower side); the per-side rate it reaches on the Pi must be read from `/api/state`, not assumed. The phase sweep at that rate: a 0.6 s gesture fires 50% instead of 100%, a 0.5 s one 25%. At ≥4 fps per side the existing `hold_*` values still fire 100% for ≥0.5 s gestures; below that they must be re-derived. Both switches default to off so the dev pipeline is unchanged — do not remove them from `config.pi.toml`. Spec §6 v1.3.
+- **In parallel mode only `_acquire` runs off the main thread, and it must stay read-only.** `GestureFSM`, `ScoreBoard` writes, fps/timing state and preview all happen in `_commit` on the main thread after every side's job has returned. Each side has its own single-thread executor so a recognizer instance is only ever called from one thread; a shared recognizer (`per_source_recognizer = false`) silently falls back to alternating.
+- **On-demand decode keeps grabbing but only decodes on request.** `CameraSource._capture_on_demand` calls `grab()` continuously (dequeue, no decode) so the driver queue never holds stale frames, and `retrieve()`s only when `read()` asks. Two 1080p MJPEG streams at 30 fps cost more than a core to decode on the Pi 4 while only 5 of every 30 frames were used. `read()` then blocks for up to a frame interval, which is why the 60 Hz dev camera profile leaves it off. DShow's `grab()` never blocks, so the idle loop must sleep; a stalled camera must not hold up `read()` twice (`_waiting`).
 
 - **Video files must track the wall clock, not decode sequentially.** The loop polls a side at ~5 fps while footage is ~30 fps; reading the next frame each tick would slow playback 6× and turn "hold 1 second" into 6 seconds of video. `VideoFileSource._read_realtime` computes the target frame from elapsed time and skips (or seeks) to it. Any change here silently corrupts scoring timing — `tests/test_video_source.py` guards it.
 - **MediaPipe VIDEO mode needs strictly increasing timestamps per recognizer instance.** `GestureReader._next_timestamp` enforces this, including two frames landing in the same millisecond.
@@ -76,7 +85,8 @@ Things that are easy to get wrong:
 - **What decides detection is the hand's fraction of the ROI's *long side*, not its pixel count** — MediaPipe letterboxes the ROI into 192×192, so the long side sets the scale. Measured cliff: 33% → 97% detected, 14% → 86%, 8% → 73%, 4% → 0%. Shrinking only the ROI's short side changes nothing.
 - **The ROI is positionable, and its position matters more than its size** (`crop_cx_ratio`/`crop_cy_ratio`, default 0.5/0.5 = centred). On `videos/A.mp4` (real court, 1920×1080) the 13 hand-verified deliberate gestures all land in x 541–1511, y 289–438 — centroid (870, 363), i.e. 177 px *above* frame centre, because players raise a hand beside their head while the lower half of the frame is bare floor. Same long side of 768 px: centred fires 3/13, offset onto the gesture zone fires 9/13. Full frame fires 0/13. Re-derive the centre from footage before touching the ratios.
 - **ROI is per-source, not global** (`SourceConfig.crop_for`, falling back field-by-field to `[capture]`). The two dev clips prove why: A is landscape real-court, B is a handheld portrait selfie. Forcing A's ROI onto B took B from 5 scoring events to 0 detections in 482 samples.
-- **MJPEG is mandatory on real cameras.** `CameraSource` sets FOURCC before resolution; without it the camera falls back to raw YUYV and 1080p starves the USB bus. `CAP_PROP_BUFFERSIZE=1` is what makes `read()` return the newest frame instead of a queued stale one.
+- **MJPEG is mandatory on real cameras.** `CameraSource` sets the resolution first and then FOURCC (DShow ignores MJPG until the resolution is fixed); without MJPG the camera falls back to raw YUYV and 1080p starves the USB bus. `CAP_PROP_BUFFERSIZE=1` is what makes `read()` return the newest frame instead of a queued stale one.
+- **Camera `device` should be a stable path on the Pi, not a number.** `/dev/videoN` follows USB enumeration order; a swap does not crash, it silently scores points for the wrong half-court. `device` accepts `/dev/v4l/by-id/...<serial>-video-index0` (the Waveshare OV2735 enumerates as `openaicam` with a unique serial) and `CameraSource.resolve_device` turns the symlink into the V4L2 index.
 - **One dead source must not kill the other half-court** (spec §5.4). `build_sources` drops what it cannot open, `_tick` skips failed reads, and `CompositeDisplay` swallows per-backend exceptions. Preserve that.
 - **Anti-false-trigger logic lives entirely in `GestureFSM`** — hold-to-confirm, per-side cooldown, and the confidence gate in `GestureReader`. It is pure logic with injected timestamps; test it there rather than through the engine.
 - **`hold_grace_seconds` and `hold_min_samples` are a pair; never ship one without the other.** At 5 fps per side a 0.6 s gesture yields only 3 samples, and the FSM measures the span between first and last *sample*, which is up to one sample period short of the true duration — that is why grace exists. But grace alone lets a single-frame misdetection keep the timer running until it reaches `hold_seconds`: phase-sweep simulation measured a 98% false-trigger rate for 0.05–0.2 s flickers. `hold_min_samples` requires real detections (grace samples don't count) and drops that to 0% while genuine ≥0.4 s gestures stay at 100%.
@@ -85,6 +95,7 @@ Things that are easy to get wrong:
 - **Replayed frames must be fed with `fresh=False`.** `_tick_side` reuses the cached `Observation` when a source hands back the same `Frame`; counting those replays as real detections lets one misdetected frame satisfy `hold_min_samples` and score. Timing still advances on a replay — only the detection count is withheld.
 - **`_tick` and `_telemetry` each guard per-side, `close()` guards per-step.** Spec §5.4 isolation must hold against *exceptions*, not just against `read()` returning `None` — the fragile third-party code (MediaPipe timestamp faults, `cv2.error` on device removal) lives in the recognition path, not the capture path.
 - **Display work is gated on there actually being a consumer.** `WebDisplay.wants_preview` is a property that is only true while an MJPEG stream is open, and `update()` skips `to_dict()`/`json.dumps` when no SSE client is subscribed. `CompositeDisplay.wants_preview` aggregates children, so it must stay a property — do not cache it into an attribute.
+- **The LED's bottom row is shared by the match-point underline and the hold-progress bar.** CP437 digits only use rows 0–6. While the FSM is accumulating a gesture that side shows the bar instead of the underline (a full underline would hide it), starting at 2 px the moment a gesture is seen — without the web page that bar is the only feedback before the score changes. The MAX7219 chain is only stable at `bus_speed_hz = 500000` on the device (3.3 V logic into a 5 V part, no level shifter); at 8 MHz blocks drop out at random.
 - **Only MediaPipe's built-in labels are used** (`Victory`, `Thumb_Down`, `Open_Palm`, see `fsm.GESTURE_ACTIONS`) — there is no training step, so a new command means picking another pre-trained label.
 
 ## Working on Windows

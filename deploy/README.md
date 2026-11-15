@@ -25,6 +25,26 @@ pip install spidev          # luma 是惰性导入它的，缺了只在运行时
 python scripts/fetch_model.py
 ```
 
+> ⚠️ **Pi 4 不能用 mediapipe 1.x。** 它的 aarch64 安装包用了 ARMv8 AES 指令，而 Pi 4 的
+> BCM2711 没有加密扩展，程序一启动就被杀掉（`status=4/ILL`，日志里是
+> `This binary was compiled with aes enabled, but this feature is not available`）。
+> Pi 5 没有这个问题。0.10.x 能跑，但它的 aarch64 包最高只到 Python 3.12，而新系统自带
+> 3.13。`deploy/pi4_mediapipe_fix.sh` 一步到位：用 uv 装一个独立的 Python 3.12，
+> 逐个试 0.10.x，挑第一个能在本机加载模型的版本重建虚拟环境（实机选中 0.10.18）。
+>
+> 上面的路径按用户名 `pi` 写的；用 Raspberry Pi Imager 自定义了用户名的话，
+> 路径和 `acepoint.service` 里的 `User=` 都要跟着改。
+
+### 更新代码
+
+```bash
+cd ~/piggy-acepoint && git pull && bash deploy/pi_update.sh
+```
+
+`pi_update.sh` 把仓库里的 `src/`、`scripts/`、`deploy/` 拷进运行目录 `~/AcePoint`，
+给 `config.pi.toml` 补上新增的配置项（已有的、现场改过的都不动），停服务跑一遍
+`--check`，再启动。日志在 `~/pi-update.log`。
+
 ## 3. 接线自检（先屏后摄像头）
 
 ```bash
@@ -108,16 +128,39 @@ acepoint --check -c config.pi.toml
 
 ## 5. 跑一次实测标定
 
+### 5.1 采样率
+
 **所有防误触参数都是在开发机上按 5fps/路 标定的**，Pi 的算力能不能维持这个
-采样率必须实测。开发机单帧推理 23~26ms，Pi 4 保守估 4~8 倍慢。
+采样率必须实测。开发机单帧推理约 21ms；**Pi 4 实测 157~219ms**，左右轮流识别时
+每路只有 2.5fps —— 0.6 秒的手势触发率从 100% 掉到 50%。所以 `config.pi.toml`
+里 `recognition.parallel` 和 `capture.decode_on_demand` 必须开着（需求 §6 v1.3）。
+
+每路的实际帧率和单帧识别耗时看网页面板的"帧率 / 识别耗时"，或者：
 
 ```bash
-python scripts/profile_pipeline.py -c config.pi.toml    # 看 recognize 那行和 RSS
+curl -s http://localhost:8080/api/state | python3 -m json.tool | grep -E '"fps"|recognize_ms'
 python scripts/check_sampling.py -c config.pi.toml      # 按实测采样率复核相位
 ```
 
-若每路实际帧率明显低于 5fps，`hold_seconds` / `hold_grace_seconds` /
-`hold_min_samples` 都要按新的采样周期重新标定（需求 §10 阶段 2）。
+每路 ≥4fps 时现有参数够用（≥0.5 秒的手势 100% 触发）。低于 4fps 的话
+`hold_seconds` / `hold_grace_seconds` / `hold_min_samples` 都要按新的采样周期
+重新标定（需求 §10 阶段 2）。
+
+### 5.2 识别区
+
+识别区必须在**真实机位**上标定：设备装在网柱顶，人站到 2~3 米处按平时的习惯比手势。
+桌面上的取景和球场完全不同，标出来的结果搬不过去。
+
+```bash
+sudo systemctl stop acepoint
+python scripts/record_camera.py -c config.pi.toml left       # 录 30 秒，右边同理
+python scripts/compare_roi.py -c config.pi.toml videos/calib-left.avi \
+    --ratios 0.60x0.80 0.40x0.30@0.50x0.35 0.30x0.25@0.50x0.35
+sudo systemctl start acepoint
+```
+
+**先扫中心再扫大小**（需求 §5.2）。两路取景不同就在各自的 `[[sources]]` 里分别配
+`crop_w_ratio` / `crop_h_ratio` / `crop_cx_ratio` / `crop_cy_ratio`。
 
 ## 6. 开机自启
 

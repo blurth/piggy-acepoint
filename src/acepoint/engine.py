@@ -1,14 +1,21 @@
 """主循环：轮询取帧 -> 裁识别区 -> 手势识别 -> 状态机 -> 比分 -> 显示。
 
-单线程跑识别，显示后端各自开线程。左右半场轮流占用时间片，
+默认单线程跑识别，显示后端各自开线程。左右半场轮流占用时间片，
 每个时间片长 1/poll_hz 秒，所以两路各得 poll_hz/2 的帧率（需求 §6）。
+
+`recognition.parallel` 打开后，两路的"取帧 + 识别"各占一个线程同时跑，
+每 2/poll_hz 秒一拍 —— 每路的采样率不变，只是不再互相排队。状态机、比分、
+显示仍然只在主线程里动。
 """
 
 from __future__ import annotations
 
+import functools
 import logging
 import queue
 import time
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 
 import cv2
 import numpy as np
@@ -18,7 +25,7 @@ from acepoint.audio.service import AudioService
 from acepoint.displays import build_display
 from acepoint.fsm import GestureFSM
 from acepoint.recognition import GestureReader, Observation
-from acepoint.sources import FrameSource, build_sources
+from acepoint.sources import Frame, FrameSource, build_sources
 from acepoint.state import Action, ScoreBoard, SideStatus, Telemetry
 
 log = logging.getLogger(__name__)
@@ -26,6 +33,16 @@ log = logging.getLogger(__name__)
 
 class NoSourceError(RuntimeError):
     """一路视频源都开不起来。"""
+
+
+@dataclass
+class _Sample:
+    """一路在一拍里取到并识别完的结果：`_acquire` 产出，`_commit` 落账。"""
+
+    frame: Frame
+    observation: Observation
+    repeated: bool                 # 视频源给回了同一帧，沿用上次的识别结果
+    elapsed_ms: float | None       # 本次推理耗时；repeated 时没跑推理，为 None
 
 
 def roi_rect(shape: tuple[int, ...], w_ratio: float, h_ratio: float,
@@ -70,6 +87,8 @@ class ScoringEngine:
         self._audio_controls = queue.Queue(maxsize=32)
         self.reader = None
         self.display = None
+        # 并行识别时每个半场一个单线程池：同一个识别器实例永远只被同一个线程调用
+        self._workers: dict[str, ThreadPoolExecutor] | None = None
         try:
             self.audio = AudioService(config.audio, config.game, config.resolve(config.audio.pack_root))
             self.display = build_display(config, on_action=self._enqueue_manual,
@@ -80,6 +99,17 @@ class ScoringEngine:
                 list(self.sources),
                 config.resolve(config.recognition.model_path),
             )
+            if config.recognition.parallel and len(self.sources) > 1:
+                if config.recognition.per_source_recognizer:
+                    self._workers = {
+                        side: ThreadPoolExecutor(max_workers=1,
+                                                 thread_name_prefix=f"recognize-{side}")
+                        for side in self.sources
+                    }
+                else:
+                    # 共用一个 VIDEO 模式实例时两路不能同时喂帧
+                    log.warning("recognition.parallel 需要 per_source_recognizer = true，"
+                                "已退回左右轮流识别")
         except Exception:
             # 别把摄像头句柄和 TFLite 解释器漏在这 —— 显示后端构造失败同样要清干净
             self.close()
@@ -103,7 +133,14 @@ class ScoringEngine:
         configured = max(1, len(self.config.sources))
         live = max(1, len(self.sources))
         per_side_fps = self.config.capture.poll_hz / configured
-        interval = 1.0 / (per_side_fps * live)
+        if self._workers is not None:
+            # 并行：一拍里各路同时取帧识别，一拍的长度就是每路的采样周期
+            interval = 1.0 / per_side_fps
+            steps = [self._tick_all]
+        else:
+            interval = 1.0 / (per_side_fps * live)
+            steps = [functools.partial(self._tick, side, source)
+                     for side, source in self.sources.items()]
         started = time.monotonic()
         rois = "; ".join(
             f"{side} {w * 100:.0f}%x{h * 100:.0f}%@({cx * 100:.0f}%,{cy * 100:.0f}%)"
@@ -111,9 +148,10 @@ class ScoringEngine:
             for w, h, cx, cy in (self._crop(side),)
         )
         log.info(
-            "ready — sides=%s, %.1f fps per side (configured %d source%s), ROI %s",
+            "ready — sides=%s, %.1f fps per side (configured %d source%s, %s), ROI %s",
             list(self.sources), per_side_fps, configured,
-            "" if configured == 1 else "s", rois,
+            "" if configured == 1 else "s",
+            "parallel" if self._workers is not None else "alternating", rois,
         )
         if live < configured:
             log.warning("只起来 %d/%d 路视频源；采样率仍按 %.1f fps/路 保持不变",
@@ -121,11 +159,11 @@ class ScoringEngine:
 
         try:
             while not self._stop:
-                for side, source in self.sources.items():
+                for step in steps:
                     slice_start = time.monotonic()
                     self._drain_audio()
                     self._drain_manual()
-                    self._tick(side, source, slice_start)
+                    step(slice_start)
                     self.display.update(self._telemetry())
 
                     if max_seconds is not None and time.monotonic() - started >= max_seconds:
@@ -147,6 +185,10 @@ class ScoringEngine:
         """每一步各自兜异常：一个关不掉不能连累后面的都关不掉。"""
         if getattr(self, "audio", None) is not None:
             self._safely(self.audio.close, "关闭语音")
+        # 先停识别线程，再关它们正在用的视频源和识别器
+        for side, worker in (self._workers or {}).items():
+            self._safely(functools.partial(worker.shutdown, wait=True, cancel_futures=True),
+                         f"停止识别线程 {side}")
         for side, source in self.sources.items():
             self._safely(source.close, f"关闭视频源 {side}")
         if self.reader is not None:
@@ -173,19 +215,62 @@ class ScoringEngine:
         try:
             self._tick_side(side, source, now)
         except Exception:                        # noqa: BLE001 - 这一路的问题不能连坐
-            log.exception("[%s] 这一拍出错，跳过；该半场继续", side)
-            source.note_failure()
+            self._recover(side, source)
+
+    def _tick_all(self, now: float) -> None:
+        """并行模式的一拍：各半场在自己的线程里同时取帧 + 识别，主线程等齐后逐路落账。
+
+        等齐再落账而不是谁先回来先处理：状态机、比分、预览全都只在主线程里动，
+        和轮流模式是同一套代码，线程里只做最贵、且各路互不相干的那一段。
+        异常隔离和 `_tick` 一样按路兜（需求 §5.4）。
+        """
+        jobs = {side: self._workers[side].submit(self._acquire, side, source)
+                for side, source in self.sources.items()}
+        for side, source in self.sources.items():
             try:
-                self.fsms[side].feed(None, time.monotonic())
-            except Exception:                    # noqa: BLE001
-                log.exception("[%s] 状态机复位也失败了", side)
+                self._commit(side, source, now, jobs[side].result())
+            except Exception:                    # noqa: BLE001 - 这一路的问题不能连坐
+                self._recover(side, source)
+
+    def _recover(self, side: str, source: FrameSource) -> None:
+        """某一路这一拍抛了异常：记故障、状态机按"没看到手势"推进，另一路照常。"""
+        log.exception("[%s] 这一拍出错，跳过；该半场继续", side)
+        source.note_failure()
+        try:
+            self.fsms[side].feed(None, time.monotonic())
+        except Exception:                        # noqa: BLE001
+            log.exception("[%s] 状态机复位也失败了", side)
 
     def _tick_side(self, side: str, source: FrameSource, now: float) -> None:
+        self._commit(side, source, now, self._acquire(side, source))
+
+    def _acquire(self, side: str, source: FrameSource) -> _Sample | None:
+        """取帧 + 识别。取不到帧返回 None。
+
+        并行模式下这一段跑在该半场自己的线程里，所以它**只读**本半场的状态、
+        不写任何东西 —— 写回全部留给主线程的 `_commit`。
+        """
         frame = source.read()
         if frame is None:
+            return None
+        if frame is self._last_frame.get(side):
+            # 视频源在两次轮询之间还没走到下一帧，会把同一个 Frame 再给一次。
+            # 同一张图重跑一遍推理是纯浪费（这是整个循环里最贵的一步），
+            # 直接沿用上次结果，但时间照常推进，手势保持时长不受影响。
+            return _Sample(frame, self._last_obs[side], True, None)
+        roi = crop_roi(frame.image, *self._crop(side))
+        started = time.perf_counter()
+        observation = self.reader.observe(side, roi)
+        return _Sample(frame, observation, False, (time.perf_counter() - started) * 1000)
+
+    def _commit(self, side: str, source: FrameSource, now: float,
+                sample: _Sample | None) -> None:
+        """把一拍的结果落到状态机、比分和预览上。只在主线程调用。"""
+        if sample is None:
             # 单路故障不影响另一路（需求 §5.4）：这一拍跳过即可
             self.fsms[side].feed(None, time.monotonic())
             return
+        frame, observation, repeated = sample.frame, sample.observation, sample.repeated
 
         previous = self._last_read.get(side)
         if previous is not None:
@@ -193,19 +278,10 @@ class ScoringEngine:
             self._fps[side] = instant if self._fps[side] == 0 else self._fps[side] * 0.8 + instant * 0.2
         self._last_read[side] = now
 
-        repeated = frame is self._last_frame.get(side)
-        if repeated:
-            # 视频源在两次轮询之间还没走到下一帧，会把同一个 Frame 再给一次。
-            # 同一张图重跑一遍推理是纯浪费（这是整个循环里最贵的一步），
-            # 直接沿用上次结果，但时间照常推进，手势保持时长不受影响。
-            observation = self._last_obs[side]
-        else:
-            roi = crop_roi(frame.image, *self._crop(side))
-            started = time.perf_counter()
-            observation = self.reader.observe(side, roi)
-            elapsed = (time.perf_counter() - started) * 1000
+        if not repeated:
             previous = self._recognize_ms[side]
-            self._recognize_ms[side] = elapsed if previous == 0 else previous * 0.8 + elapsed * 0.2
+            self._recognize_ms[side] = (sample.elapsed_ms if previous == 0
+                                        else previous * 0.8 + sample.elapsed_ms * 0.2)
             self._last_obs[side] = observation
             self._last_frame[side] = frame
 

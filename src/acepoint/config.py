@@ -32,6 +32,12 @@ class RecognitionConfig:
     # 跟踪状态会互相污染（Thumb_Down 检出率掉 77%），§6 v1.1 已修正。
     # 默认值只在找不到配置文件时生效，而那正是最容易被忽略的部署路径。
     per_source_recognizer: bool = True
+    # True = 左右两路的识别各占一个线程同时跑（要求 per_source_recognizer）。
+    # MediaPipe 在 Linux 上的推理是单线程的：Pi 4 实测单帧 157~219ms，左右轮流跑
+    # 每路只有 2.5fps，而防误触参数是按 5fps/路 标定的 —— 0.6 秒的手势触发率
+    # 从 100% 掉到 50%。并行后两路各用一个核，每路回到约 5fps。
+    # 开发机单帧约 21ms，轮流跑绰绰有余，所以默认关。
+    parallel: bool = False
 
 
 @dataclass(frozen=True)
@@ -42,6 +48,11 @@ class CaptureConfig:
     # USB 摄像头画质控制；None 表示保留驱动默认值。不同型号支持的范围不同。
     brightness: float | None = None
     sharpness: float | None = None
+    # True = 摄像头只在引擎要帧时才解码一帧；False = 后台线程把每一帧都解出来。
+    # 相机出 30fps 而每路只用 5fps：两路 1080p MJPEG 全解码在 Pi 4 上白占一个多核，
+    # 其中 5/6 的帧解完就扔。按需解码时取帧会等到相机出下一帧（最多一个帧间隔），
+    # 画面一样新鲜，但每次取帧多等几十毫秒，所以采样率很高的开发机配置不要开。
+    decode_on_demand: bool = False
     crop_w_ratio: float = 0.6              # 识别区:占画面宽度的比例
     crop_h_ratio: float = 0.8              # 识别区:占画面高度的比例
     # 识别区中心在画面里的位置（0=左/上,0.5=正中,1=右/下）。默认居中。
@@ -177,6 +188,9 @@ class LedConfig:
     bus_speed_hz: int = 8_000_000
     reverse_blocks: bool = False           # 左右装反了就打开（接线方向决定）
     show_match_point: bool = True          # 赛点时在该侧底部画一条下划线
+    # 手势保持期间在该侧底部画一条随进度变长的横线：一认出手势就亮，
+    # 球员不用等到加分才知道"机器看见我了"（没有网页时这是唯一的即时反馈）
+    show_hold_progress: bool = True
 
     def __post_init__(self) -> None:
         if self.cascaded < 2 or self.cascaded % 2:

@@ -34,6 +34,7 @@ def build_source(spec: SourceConfig, capture: CaptureConfig, config: Config) -> 
             mirror=spec.mirror,
             brightness=capture.brightness,
             sharpness=capture.sharpness,
+            on_demand=capture.decode_on_demand,
         )
     except OSError as exc:
         log.warning("[%s] source unavailable, this half-court is disabled: %s", spec.side, exc)

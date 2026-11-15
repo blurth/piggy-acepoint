@@ -132,3 +132,58 @@ def test_start_draws_zeros_before_starting_thread(fake_luma, monkeypatch):
     assert fake_luma["text"] == [((0, 0), "00"), ((16, 0), "00")]
     thread.start.assert_called_once()
     display.close()
+
+
+# ------------------------------------------------------------- 保持进度条
+
+def _telemetry(**sides):
+    from acepoint.state import SideStatus, Telemetry
+
+    return Telemetry(snapshot=Snapshot(),
+                     sides={side: SideStatus(side=side, **fields) for side, fields in sides.items()})
+
+
+def test_hold_bar_grows_along_the_bottom_row_of_that_side(fake_luma):
+    draw_once(LedConfig(cascaded=4), Snapshot(left=3, right=5), hold={"right": 6})
+    assert fake_luma["line"] == [(16, 7, 21, 7)]
+
+
+def test_hold_bar_replaces_the_match_point_underline_while_holding(fake_luma):
+    """赛点的整条下划线会把进度条盖住，保持期间只画进度条。"""
+    draw_once(LedConfig(cascaded=4), Snapshot(left=20, right=19, match_points=("left",)),
+              hold={"left": 4})
+    assert fake_luma["line"] == [(0, 7, 3, 7)]
+
+
+def test_hold_bar_follows_reversed_blocks(fake_luma):
+    draw_once(LedConfig(cascaded=4, reverse_blocks=True), Snapshot(), hold={"left": 8})
+    assert fake_luma["line"] == [(16, 7, 23, 7)]
+
+
+@pytest.mark.parametrize("progress, pixels", [(0.0, 2), (0.4, 6), (0.8, 13), (1.0, 16), (1.7, 16)])
+def test_hold_pixels_light_up_as_soon_as_a_gesture_is_seen(progress, pixels):
+    """进度为 0（刚认出手势）时也要亮：这条线首先是告诉球员机器看见他了。"""
+    display = LedDisplay(LedConfig(cascaded=4))
+    telemetry = _telemetry(left={"gesture": "Victory", "required": 0.5, "progress": progress})
+    assert display._hold_pixels(telemetry) == (("left", pixels),)
+
+
+def test_hold_pixels_ignore_sides_that_are_not_holding():
+    display = LedDisplay(LedConfig(cascaded=4))
+    telemetry = _telemetry(
+        left={"gesture": None, "detected": "Victory", "cooldown_remaining": 3.0},   # 冷却中
+        right={"gesture": "Victory", "required": 0.5, "progress": 0.5},
+    )
+    assert display._hold_pixels(telemetry) == (("right", 8),)
+
+
+def test_hold_progress_can_be_switched_off():
+    display = LedDisplay(LedConfig(cascaded=4, show_hold_progress=False))
+    telemetry = _telemetry(left={"gesture": "Victory", "required": 0.5, "progress": 0.5})
+    assert display._hold_pixels(telemetry) == ()
+
+
+def test_update_hands_the_hold_bar_to_the_render_thread():
+    display = LedDisplay(LedConfig(cascaded=4))
+    display.update(_telemetry(left={"gesture": "Victory", "required": 0.5, "progress": 0.5}))
+    assert display._hold == (("left", 8),)

@@ -258,3 +258,95 @@ def test_missing_video_disables_only_that_side(config):
         assert list(engine.sources) == [config.sources[1].side]
     finally:
         engine.close()
+
+
+# ------------------------------------------------------------------ 并行识别
+
+@pytest.fixture
+def parallel_config(config) -> Config:
+    return replace(config, recognition=replace(config.recognition, parallel=True))
+
+
+def test_parallel_engine_runs_both_sides_at_the_configured_rate(parallel_config):
+    """并行模式每路的采样率和轮流模式一样（poll_hz / 路数），只是两路不再互相排队。"""
+    engine = ScoringEngine(parallel_config)
+    recorder = RecordingDisplay()
+    engine.display.displays.append(recorder)
+    assert set(engine._workers) == {"left", "right"}
+
+    engine.run(max_seconds=1.5)
+
+    last = recorder.updates[-1]
+    assert set(last.sides) == {"left", "right"}
+    assert all(status.online for status in last.sides.values())
+    assert {"left", "right"} <= set(recorder.previews)
+    assert (last.snapshot.left, last.snapshot.right) == (0, 0)
+    expected = parallel_config.capture.poll_hz / len(parallel_config.sources)
+    for status in last.sides.values():
+        assert status.fps == pytest.approx(expected, rel=0.25)
+        assert status.recognize_ms > 0
+
+
+def test_parallel_recognition_runs_off_the_main_thread_but_commits_on_it(parallel_config):
+    """识别在各半场自己的线程里跑；状态机只在主线程里被喂（它不是线程安全的）。"""
+    import threading
+
+    engine = ScoringEngine(parallel_config)
+    try:
+        observed, fed = {}, {}
+        original = engine.reader.observe
+
+        def observe(side, roi):
+            observed[side] = threading.current_thread().name
+            return original(side, roi)
+
+        engine.reader.observe = observe
+        for side, fsm in engine.fsms.items():
+            def feed(gesture, now, *, fresh=True, _side=side, _feed=fsm.feed):
+                fed[_side] = threading.current_thread().name
+                return _feed(gesture, now, fresh=fresh)
+            fsm.feed = feed
+
+        engine._tick_all(time.monotonic())
+
+        assert observed["left"].startswith("recognize-left")
+        assert observed["right"].startswith("recognize-right")
+        assert set(fed.values()) == {threading.current_thread().name}
+    finally:
+        engine.close()
+
+
+def test_parallel_raising_source_does_not_kill_the_other_half_court(parallel_config):
+    """需求 §5.4 在并行模式下同样成立：线程里抛的异常按路兜住。"""
+    engine = ScoringEngine(parallel_config)
+    recorder = RecordingDisplay()
+    engine.display.displays.append(recorder)
+
+    def explode():
+        raise RuntimeError("camera yanked")
+
+    engine.sources["left"].read = explode
+    engine.run(max_seconds=1.0)                   # 不该抛出来
+
+    healthy = [t.sides["right"] for t in recorder.updates if "right" in t.sides]
+    assert healthy[-1].online
+    assert healthy[-1].fps > 0
+
+
+def test_parallel_needs_one_recognizer_per_side(config):
+    """共用一个 VIDEO 模式实例时两路不能同时喂帧，必须退回轮流识别。"""
+    shared = replace(config.recognition, parallel=True, per_source_recognizer=False)
+    engine = ScoringEngine(replace(config, recognition=shared))
+    try:
+        assert engine._workers is None
+    finally:
+        engine.close()
+
+
+def test_parallel_is_skipped_when_only_one_side_is_alive(parallel_config):
+    broken = replace(parallel_config.sources[0], path="does-not-exist.mp4")
+    engine = ScoringEngine(replace(parallel_config, sources=(broken, parallel_config.sources[1])))
+    try:
+        assert engine._workers is None
+    finally:
+        engine.close()
