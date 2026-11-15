@@ -147,3 +147,32 @@ def test_start_does_not_raise_when_the_port_is_taken(caplog):
         web.start()
     assert any("不可用" in record.getMessage() for record in caplog.records)
     assert web._thread is None
+
+
+@pytest.mark.parametrize("os_name, reuse", [("posix", True), ("nt", False)])
+def test_port_probe_sets_reuseaddr_only_where_it_is_safe(monkeypatch, os_name, reuse):
+    """Linux 上不设 SO_REUSEADDR，服务重启后会被 TIME_WAIT 里的旧连接误报成端口被占，
+    网页就再也起不来（实机上就是这么坏的）；Windows 上设了反而会漏报真正的占用。"""
+    options = []
+
+    class FakeSocket:
+        def __init__(self, *args):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def setsockopt(self, level, name, value):
+            options.append((level, name, value))
+
+        def bind(self, address):
+            pass
+
+    wanted = (socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    monkeypatch.setattr("acepoint.displays.web.os.name", os_name)
+    monkeypatch.setattr("acepoint.displays.web.socket.socket", FakeSocket)
+    assert _port_conflict("127.0.0.1", 8080) is None
+    assert (wanted in options) is reuse

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import queue
 import socket
 import threading
@@ -34,10 +35,16 @@ _BOUNDARY = b"--acepoint"
 def _port_conflict(host: str, port: int) -> str | None:
     """试着占一下端口；返回错误说明，None 表示可用。
 
-    注意不要设 SO_REUSEADDR —— Windows 上它会让 bind 在端口已被占用时照样成功，
-    探测就失去意义了。
+    SO_REUSEADDR 两个平台的含义相反，必须分开处理：
+      * Windows 上它会让 bind 在端口已被别人监听时照样成功，探测就失去意义了 —— 不能设。
+      * Linux 上不设反而会误报：服务重启后，上一个进程留下的连接（网页的 SSE、预览流）
+        会在 TIME_WAIT 里挂约一分钟，不带 SO_REUSEADDR 的 bind 被它挡住，而 werkzeug
+        自己是带着这个选项绑定的，真起服务并不会失败。结果就是"重启后网页打不开"。
+        Linux 的 SO_REUSEADDR 不会放过"另一个进程正在监听"，所以探测依然有效。
     """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        if os.name != "nt":
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             probe.bind((host, port))
         except OSError as exc:
