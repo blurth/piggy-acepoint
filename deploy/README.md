@@ -142,6 +142,11 @@ curl -s http://localhost:8080/api/state | python3 -m json.tool | grep -E '"fps"|
 python scripts/check_sampling.py -c config.pi.toml      # 按实测采样率复核相位
 ```
 
+`parallel` + `decode_on_demand` + `inference_threads = 2` 都开着时，实机实测：
+没人比手势每路 4.9~5.0fps，有人比手势的那几秒约 3.8~4.2fps（画面里有手时识别最慢）。
+偏离这组数字就先查配置项是不是丢了、CPU 温度（`vcgencmd measure_temp`，
+无散热时 77°C，加风扇 54°C）和有没有降频（`vcgencmd get_throttled` 应为 `0x0`）。
+
 每路 ≥4fps 时现有参数够用（≥0.5 秒的手势 100% 触发）。低于 4fps 的话
 `hold_seconds` / `hold_grace_seconds` / `hold_min_samples` 都要按新的采样周期
 重新标定（需求 §10 阶段 2）。
