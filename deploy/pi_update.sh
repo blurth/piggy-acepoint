@@ -43,6 +43,7 @@ ensure() {
     fi
 }
 ensure '^per_source_recognizer' parallel true
+ensure '^parallel[[:space:]]*=' inference_threads 2
 ensure '^poll_hz' decode_on_demand true
 
 step "停止服务并自检"

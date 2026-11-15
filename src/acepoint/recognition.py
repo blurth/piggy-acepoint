@@ -51,6 +51,42 @@ class ModelMissingError(FileNotFoundError):
         )
 
 
+def threaded_base_options(base_options_cls, model_path: Path, threads: int):
+    """模型选项；threads > 1 时让推理用多个线程。返回 (选项, 实际生效的线程数)。
+
+    MediaPipe 在 Linux 上给 XNNPACK 的默认线程数是 1，Python 的 BaseOptions 也没有
+    暴露这个设置。0.10.x 的选项最终会转成 protobuf，这里在转出来的 proto 上把
+    acceleration 换成带 num_threads 的 XNNPACK 委托。Pi 4 实测（0.10.18，画面里
+    有一只手）：1 线程 297ms，2 线程 185ms，识别结果和置信度逐位相同。
+
+    1.x 改成了 C 绑定，没有 to_pb2 —— 那就按默认线程数跑，不报错：
+    这个设置只是性能旋钮，不该让识别起不来。
+    """
+    plain = base_options_cls(model_asset_path=str(model_path))
+    if threads <= 1:
+        return plain, 1
+    try:
+        if not hasattr(base_options_cls, "to_pb2"):
+            raise ImportError("BaseOptions has no to_pb2")
+        from mediapipe.calculators.tensor import inference_calculator_pb2
+        from mediapipe.tasks.cc.core.proto import acceleration_pb2
+    except ImportError as exc:
+        log.warning("recognition.inference_threads=%d 在这个 mediapipe 版本上不生效（%s），"
+                    "按默认线程数运行", threads, exc)
+        return plain, 1
+
+    xnnpack = inference_calculator_pb2.InferenceCalculatorOptions.Delegate.Xnnpack
+
+    class ThreadedBaseOptions(base_options_cls):
+        def to_pb2(self):
+            options = super().to_pb2()
+            options.acceleration.CopyFrom(
+                acceleration_pb2.Acceleration(xnnpack=xnnpack(num_threads=threads)))
+            return options
+
+    return ThreadedBaseOptions(model_asset_path=str(model_path)), threads
+
+
 class GestureReader:
     """把 BGR 画面变成手势名。"""
 
@@ -69,10 +105,13 @@ class GestureReader:
         self.config = config
         self.per_source = config.per_source_recognizer
 
+        base_options, self.inference_threads = threaded_base_options(
+            mp_python.BaseOptions, model_path, config.inference_threads)
+
         def make():
             return vision.GestureRecognizer.create_from_options(
                 vision.GestureRecognizerOptions(
-                    base_options=mp_python.BaseOptions(model_asset_path=str(model_path)),
+                    base_options=base_options,
                     running_mode=vision.RunningMode.VIDEO,
                     num_hands=config.num_hands,
                     min_hand_detection_confidence=config.min_hand_detection_confidence,
@@ -85,9 +124,12 @@ class GestureReader:
             self._recognizers = {self._SHARED: make()}
         self._last_ts = dict.fromkeys(self._recognizers, 0)
         log.info(
-            "gesture recognizer ready (%s instance%s, min_confidence=%.2f)",
+            "gesture recognizer ready (%s instance%s, %s inference thread%s each, "
+            "min_confidence=%.2f)",
             len(self._recognizers),
             "" if len(self._recognizers) == 1 else "s",
+            self.inference_threads,
+            "" if self.inference_threads == 1 else "s",
             config.min_confidence,
         )
 

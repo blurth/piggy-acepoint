@@ -38,6 +38,15 @@ class RecognitionConfig:
     # 从 100% 掉到 50%。并行后两路各用一个核，每路回到约 5fps。
     # 开发机单帧约 21ms，轮流跑绰绰有余，所以默认关。
     parallel: bool = False
+    # 每个识别器的推理线程数。MediaPipe 在 Linux 上默认 1。Pi 4 实测（画面里有一只手）：
+    # 1 线程 297ms / 2 线程 185ms / 3 线程 155ms；但两路同时跑时 4 个核只够每路 2 个 ——
+    # 每路 3 个反而从 269ms 涨到 397ms，每路 4 个 1580ms。所以 Pi 上配 2，别再往上加。
+    # 只在 mediapipe 0.10.x 上生效（见 recognition.threaded_base_options）。
+    inference_threads: int = 1
+
+    def __post_init__(self) -> None:
+        if self.inference_threads < 1:
+            raise ConfigError("recognition.inference_threads 必须 >= 1")
 
 
 @dataclass(frozen=True)
