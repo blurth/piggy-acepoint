@@ -71,8 +71,9 @@ block_orientation = -90               # 显示乱码/倒置就调这个（0 / 90
 rotate = 0
 reverse_blocks = false                # 左右装反了就改 true（取决于级联接线方向）
 show_match_point = true               # 赛点时在该侧底部画一条下划线
-show_hold_progress = true             # 手势保持期间在该侧底部画一条随进度变长的横线，
-                                      # 一认出手势就亮 —— 不看网页时唯一的即时反馈
+show_hold_progress = true             # 识别条：底部一条实线，一认出手势就亮，从该方外侧边缘
+                                      # 向对面变长，涨满即计分 —— 不看网页时唯一的即时反馈
+show_cooldown = true                  # 冷却条：计分后底部一条虚线，缩完才能再比手势
 bus_speed_hz = 500000                 # 实机实测：8MHz 下四块屏时亮时灭，0.5MHz 稳定。
                                       # 根因是 3.3V 电平余量不足（见 deploy/README.md），
                                       # 加了电平转换后可以再往上调

@@ -38,7 +38,7 @@ def test_odd_block_count_is_rejected(cascaded):
 @pytest.fixture
 def fake_luma(monkeypatch):
     """把 luma 的 text/canvas/font 换成假的，记录画了什么。"""
-    calls = {"text": [], "line": []}
+    calls = {"text": [], "line": [], "point": []}
 
     def fake_text(draw, xy, content, *, fill=None, font=None):
         calls["text"].append((xy, content))
@@ -47,6 +47,7 @@ def fake_luma(monkeypatch):
         def __init__(self, device):
             self.draw = MagicMock()
             self.draw.line.side_effect = lambda xy, fill=None: calls["line"].append(xy)
+            self.draw.point.side_effect = lambda xy, fill=None: calls["point"].append(xy)
 
         def __enter__(self):
             return self.draw
@@ -134,7 +135,10 @@ def test_start_draws_zeros_before_starting_thread(fake_luma, monkeypatch):
     display.close()
 
 
-# ------------------------------------------------------------- 保持进度条
+# ----------------------------------------------------------------- 状态条
+#
+# 最底下一行：实线从本方外侧边缘变长 = 正在识别；虚线向本方边缘缩短 = 冷却。
+# 只有一方有状态时占满 32px，两方都有就各用自己的 16px。
 
 def _telemetry(**sides):
     from acepoint.state import SideStatus, Telemetry
@@ -143,47 +147,177 @@ def _telemetry(**sides):
                      sides={side: SideStatus(side=side, **fields) for side, fields in sides.items()})
 
 
-def test_hold_bar_grows_along_the_bottom_row_of_that_side(fake_luma):
-    draw_once(LedConfig(cascaded=4), Snapshot(left=3, right=5), hold={"right": 6})
-    assert fake_luma["line"] == [(16, 7, 21, 7)]
+def _pixels(config: LedConfig, *, age: float = 0.0, **sides):
+    """遥测到达 age 秒之后，状态条该亮成什么样。"""
+    display = LedDisplay(config)
+    bars = display._bars_from(_telemetry(**sides), 100.0)
+    return display._bar_pixels(bars, 100.0 + age)
 
 
-def test_hold_bar_replaces_the_match_point_underline_while_holding(fake_luma):
-    """赛点的整条下划线会把进度条盖住，保持期间只画进度条。"""
+HOLDING = {"gesture": "Victory", "required": 0.5}
+COOLING = {"cooldown_total": 5.0}
+
+
+@pytest.mark.parametrize("progress, lit", [(0.0, 3), (0.25, 8), (0.5, 16), (1.0, 32), (1.7, 32)])
+def test_a_lone_hold_bar_spans_the_whole_bottom_row(progress, lit):
+    """进度为 0（刚认出手势）时也要亮一小段：这条线首先是告诉球员机器看见他了。"""
+    assert _pixels(LedConfig(cascaded=4), left={**HOLDING, "progress": progress}) \
+        == (("left", "hold", lit),)
+
+
+@pytest.mark.parametrize("remaining, lit", [(5.0, 32), (2.5, 16), (0.16, 1), (0.05, 0)])
+def test_a_lone_cooldown_bar_drains_across_the_whole_row(remaining, lit):
+    pixels = _pixels(LedConfig(cascaded=4), right={**COOLING, "cooldown_remaining": remaining})
+    assert pixels == ((("right", "cooldown", lit),) if lit else ())
+
+
+def test_two_active_sides_each_keep_to_their_own_half():
+    """左边在冷却、右边在比手势：谁也不遮谁，各退回自己的 16px。"""
+    pixels = _pixels(LedConfig(cascaded=4),
+                     left={**COOLING, "cooldown_remaining": 2.5},
+                     right={**HOLDING, "progress": 0.5})
+    assert pixels == (("left", "cooldown", 8), ("right", "hold", 8))
+
+
+def test_hold_wins_over_cooldown_on_the_same_side():
+    pixels = _pixels(LedConfig(cascaded=4),
+                     left={**HOLDING, "progress": 0.5, **COOLING, "cooldown_remaining": 3.0})
+    assert pixels == (("left", "hold", 16),)
+
+
+def test_idle_sides_have_no_bar():
+    assert _pixels(LedConfig(cascaded=4), left={"detected": "Victory"}, right={}) == ()
+
+
+def test_bars_keep_moving_between_telemetry_updates():
+    """遥测一秒只来四五次；渲染线程按上一次的速度往后推，条才是连续动的。"""
+    config = LedConfig(cascaded=4)
+    hold = {"left": {**HOLDING, "progress": 0.2}}
+    assert _pixels(config, **hold) == (("left", "hold", 6),)
+    assert _pixels(config, age=0.2, **hold) == (("left", "hold", 19),)       # 0.2 + 0.2/0.5
+    assert _pixels(config, age=0.9, **hold) == (("left", "hold", 32),)       # 到头就停
+
+    cool = {"right": {**COOLING, "cooldown_remaining": 5.0}}
+    assert _pixels(config, age=0.5, **cool) == (("right", "cooldown", 29),)  # 4.5 / 5
+
+
+def test_bars_stop_extrapolating_when_telemetry_stalls():
+    """主循环卡住时冷却条不能自己一路缩到 0，那等于谎报"可以再比了"。"""
+    pixels = _pixels(LedConfig(cascaded=4), age=30.0,
+                     right={**COOLING, "cooldown_remaining": 5.0})
+    assert pixels == (("right", "cooldown", 26),)                            # 只往前推 1 秒
+
+
+def test_each_bar_can_be_switched_off():
+    sides = {"left": {**HOLDING, "progress": 0.5},
+             "right": {**COOLING, "cooldown_remaining": 2.5}}
+    assert _pixels(LedConfig(cascaded=4, show_hold_progress=False), **sides) \
+        == (("right", "cooldown", 16),)
+    assert _pixels(LedConfig(cascaded=4, show_cooldown=False), **sides) \
+        == (("left", "hold", 16),)
+
+
+def test_hold_bar_is_a_solid_line_growing_from_that_sides_edge(fake_luma):
+    draw_once(LedConfig(cascaded=4), Snapshot(left=3, right=5), bars=(("left", "hold", 20),))
+    assert fake_luma["line"] == [(0, 7, 19, 7)]
+    assert fake_luma["point"] == []
+
+
+def test_right_sides_hold_bar_grows_leftwards_from_the_right_edge(fake_luma):
+    draw_once(LedConfig(cascaded=4), Snapshot(), bars=(("right", "hold", 20),))
+    assert fake_luma["line"] == [(12, 7, 31, 7)]
+
+
+def test_cooldown_bar_is_dotted_and_anchored_to_that_sides_edge(fake_luma):
+    """单色屏上靠图案区分：冷却隔一个点亮一个。固定在边缘的那个点不动，缩短时不跳。"""
+    draw_once(LedConfig(cascaded=4), Snapshot(), bars=(("left", "cooldown", 7),))
+    assert fake_luma["point"] == [[(0, 7), (2, 7), (4, 7), (6, 7)]]
+    assert fake_luma["line"] == []
+
+
+def test_right_sides_cooldown_bar_is_anchored_to_the_right_edge(fake_luma):
+    draw_once(LedConfig(cascaded=4), Snapshot(), bars=(("right", "cooldown", 5),))
+    assert fake_luma["point"] == [[(31, 7), (29, 7), (27, 7)]]
+
+
+def test_bars_follow_reversed_blocks(fake_luma):
+    """左右装反时左半场画在屏的右半，它的条也跟着从右边缘长出来。"""
+    draw_once(LedConfig(cascaded=4, reverse_blocks=True), Snapshot(),
+              bars=(("left", "hold", 8),))
+    assert fake_luma["line"] == [(24, 7, 31, 7)]
+
+
+def test_bars_take_the_row_over_from_the_match_point_underline(fake_luma):
+    """赛点的整条实线会和识别条混在一起，有状态条时整行让给它。"""
     draw_once(LedConfig(cascaded=4), Snapshot(left=20, right=19, match_points=("left",)),
-              hold={"left": 4})
-    assert fake_luma["line"] == [(0, 7, 3, 7)]
+              bars=(("right", "cooldown", 6),))
+    assert fake_luma["line"] == []
+    assert fake_luma["point"] == [[(31, 7), (29, 7), (27, 7)]]
 
 
-def test_hold_bar_follows_reversed_blocks(fake_luma):
-    draw_once(LedConfig(cascaded=4, reverse_blocks=True), Snapshot(), hold={"left": 8})
-    assert fake_luma["line"] == [(16, 7, 23, 7)]
+def test_bars_survive_a_blinking_winner(fake_luma):
+    """获胜方数字熄灭的那半拍，撤销/清零手势的进度条照样要画。"""
+    draw_once(LedConfig(cascaded=4), Snapshot(left=21, right=19, winner="left"),
+              dark="left", bars=(("left", "hold", 10),))
+    assert fake_luma["text"] == [((16, 0), "19")]
+    assert fake_luma["line"] == [(0, 7, 9, 7)]
 
 
-@pytest.mark.parametrize("progress, pixels", [(0.0, 2), (0.4, 6), (0.8, 13), (1.0, 16), (1.7, 16)])
-def test_hold_pixels_light_up_as_soon_as_a_gesture_is_seen(progress, pixels):
-    """进度为 0（刚认出手势）时也要亮：这条线首先是告诉球员机器看见他了。"""
+def test_update_hands_the_bars_to_the_render_thread():
     display = LedDisplay(LedConfig(cascaded=4))
-    telemetry = _telemetry(left={"gesture": "Victory", "required": 0.5, "progress": progress})
-    assert display._hold_pixels(telemetry) == (("left", pixels),)
+    display.update(_telemetry(left={**HOLDING, "progress": 0.5}))
+    assert [(bar.side, bar.kind, bar.fraction) for bar in display._bars] == [("left", "hold", 0.5)]
 
 
-def test_hold_pixels_ignore_sides_that_are_not_holding():
+@pytest.fixture
+def running_display():
+    """起真的渲染线程，但把 _draw 换成记录调用，不碰硬件。"""
+    import threading
+
     display = LedDisplay(LedConfig(cascaded=4))
-    telemetry = _telemetry(
-        left={"gesture": None, "detected": "Victory", "cooldown_remaining": 3.0},   # 冷却中
-        right={"gesture": "Victory", "required": 0.5, "progress": 0.5},
-    )
-    assert display._hold_pixels(telemetry) == (("right", 8),)
+    display._device = object()
+    drawn = []
+    display._draw = lambda snapshot, *, dark=None, bars=(): drawn.append((dark, bars))
+    display._thread = threading.Thread(target=display._run, daemon=True)
+    display._thread.start()
+    yield display, drawn
+    display._stop.set()
+    display._wake.set()
+    display._thread.join(timeout=2.0)
 
 
-def test_hold_progress_can_be_switched_off():
-    display = LedDisplay(LedConfig(cascaded=4, show_hold_progress=False))
-    telemetry = _telemetry(left={"gesture": "Victory", "required": 0.5, "progress": 0.5})
-    assert display._hold_pixels(telemetry) == ()
+def test_render_thread_animates_the_bar_without_new_telemetry(running_display):
+    """只推一次遥测，冷却条也要自己一格一格缩下去。"""
+    import time
+
+    display, drawn = running_display
+    display.update(_telemetry(right={**COOLING, "cooldown_remaining": 5.0}))
+    time.sleep(0.7)                                    # 5 秒缩 32 格，约 0.16 秒一格
+
+    lengths = [bars[0][2] for _, bars in drawn if bars]
+    assert lengths[0] == 32
+    assert len(lengths) >= 3
+    assert lengths == sorted(lengths, reverse=True)    # 只减不增
+    assert len(set(lengths)) == len(lengths)           # 没动就不重画（不白写 SPI）
 
 
-def test_update_hands_the_hold_bar_to_the_render_thread():
-    display = LedDisplay(LedConfig(cascaded=4))
-    display.update(_telemetry(left={"gesture": "Victory", "required": 0.5, "progress": 0.5}))
-    assert display._hold == (("left", 8),)
+def test_cooldown_bar_appears_right_after_the_score_flash(running_display, monkeypatch):
+    import time
+
+    from acepoint.state import SideStatus, Telemetry
+
+    monkeypatch.setattr("acepoint.displays.led._FLASH_INTERVAL", 0.01)
+    display, drawn = running_display
+    display.update(Telemetry(snapshot=Snapshot(), sides={}))
+    time.sleep(0.1)
+    drawn.clear()
+
+    scored = Snapshot(left=1, version=1, flash_seq=1)
+    display.update(Telemetry(snapshot=scored, sides={
+        "left": SideStatus(side="left", cooldown_remaining=5.0, cooldown_total=5.0)}))
+    time.sleep(0.3)
+
+    flashes = [dark for dark, bars in drawn[:4]]
+    assert flashes == ["both", None, "both", None]     # 闪两次，闪的时候不画条
+    assert all(not bars for _, bars in drawn[:4])
+    assert drawn[4][1][0][:2] == ("left", "cooldown")  # 闪完紧接着就是冷却条

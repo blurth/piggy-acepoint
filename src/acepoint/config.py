@@ -197,9 +197,12 @@ class LedConfig:
     bus_speed_hz: int = 8_000_000
     reverse_blocks: bool = False           # 左右装反了就打开（接线方向决定）
     show_match_point: bool = True          # 赛点时在该侧底部画一条下划线
-    # 手势保持期间在该侧底部画一条随进度变长的横线：一认出手势就亮，
+    # 手势保持期间在底部画一条随进度变长的实线：一认出手势就亮，
     # 球员不用等到加分才知道"机器看见我了"（没有网页时这是唯一的即时反馈）
     show_hold_progress: bool = True
+    # 计分后的冷却期在底部画一条逐渐缩短的虚线：缩完才能再比手势。
+    # 没有它的话冷却期间比手势屏上毫无反应，看着像识别失灵
+    show_cooldown: bool = True
 
     def __post_init__(self) -> None:
         if self.cascaded < 2 or self.cascaded % 2:

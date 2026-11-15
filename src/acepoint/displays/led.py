@@ -10,6 +10,14 @@
 所以不能把 "21:19" 当一串文字去画 —— 没有冒号的位置，两边各自右对齐两位。
 字体用 CP437_FONT（8x8 定宽），不能套 proportional()，否则字宽会缩、对不上格子。
 
+数字只用到第 0~6 行，最底下一行（第 7 行）是状态条，屏是单色的，靠图案和方向区分：
+
+    实线，从本方外侧边缘向对面变长   正在识别手势，涨满即计分
+    虚线，向本方外侧边缘缩短         计分后的冷却，缩完才能再比手势
+    本方半边的整条实线（静态）       赛点
+
+只有一方有状态时状态条占满整个底边（32px）；两方同时有就各用自己那半边。
+
 渲染放在独立线程：闪烁要 sleep，绝不能卡住识别主循环。
 """
 
@@ -18,6 +26,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from dataclasses import dataclass
 
 from acepoint.config import LedConfig
 from acepoint.displays.base import Display
@@ -28,8 +37,23 @@ log = logging.getLogger(__name__)
 _FLASH_TIMES = 2          # 计分生效闪烁 2 次（需求 §5.3）
 _FLASH_INTERVAL = 0.15
 _WIN_BLINK = 0.6          # 分出胜负后，获胜方的两位数字持续闪烁（塞不下 "WIN" 文字）
-_HOLD_MIN_PIXELS = 2      # 手势刚被认出、进度还是 0 时进度条的最短长度
 _TICK = 0.25              # 渲染线程的心跳，决定闪烁节奏的精度
+_ANIMATION_TICK = 0.05    # 状态条在动的时候改用这个心跳：遥测一秒只来四五次，自己补帧才顺
+_HOLD_MIN_FRACTION = 0.1  # 手势刚被认出、进度还是 0 时进度条的最短长度（占可用宽度）
+_MAX_EXTRAPOLATION = 1.0  # 遥测断了的话最多按上一次的速度往前推这么久，免得条自己跑飞
+
+BarPixels = tuple[tuple[str, str, int], ...]     # (半场, "hold" | "cooldown", 点亮的像素数)
+
+
+@dataclass(frozen=True)
+class _Bar:
+    """某一方的状态条在一次遥测到达时的样子；渲染线程按 rate 往后推算。"""
+
+    side: str
+    kind: str              # "hold" 正在识别 | "cooldown" 冷却中
+    fraction: float        # 遥测到达那一刻的比例，0~1
+    rate: float            # 每秒变化多少：识别为正（变长），冷却为负（缩短）
+    at: float              # 遥测到达的时刻（monotonic）
 
 
 class LedDisplay(Display):
@@ -38,7 +62,7 @@ class LedDisplay(Display):
     def __init__(self, config: LedConfig) -> None:
         self.config = config
         self._latest: Snapshot | None = None
-        self._hold: tuple[tuple[str, int], ...] = ()    # (半场, 进度条像素数)，只含正在保持的
+        self._bars: tuple[_Bar, ...] = ()
         self._lock = threading.Lock()
         self._wake = threading.Event()
         self._stop = threading.Event()
@@ -87,27 +111,47 @@ class LedDisplay(Display):
                  self.config.cascaded, self.config.digits_per_side, self.config.brightness)
 
     def update(self, telemetry: Telemetry) -> None:
-        hold = self._hold_pixels(telemetry)
+        bars = self._bars_from(telemetry, time.monotonic())
         with self._lock:
             self._latest = telemetry.snapshot
-            self._hold = hold
+            self._bars = bars
         self._wake.set()
 
-    def _hold_pixels(self, telemetry: Telemetry) -> tuple[tuple[str, int], ...]:
-        """各半场保持进度条该亮几个像素。
+    def _bars_from(self, telemetry: Telemetry, now: float) -> tuple[_Bar, ...]:
+        """从遥测里取出各方的状态条：正在识别优先，其次是冷却。
 
-        一认出计分手势就至少亮 `_HOLD_MIN_PIXELS` 个点（此时进度还是 0）——
-        这条线的首要作用是告诉球员"看见你了"，其次才是进度。
-        冷却期间状态机不累计手势（gesture 为 None），自然不亮。
+        冷却期间状态机不累计手势（gesture 恒为 None），所以两者不会同时出现在同一方。
         """
-        if not self.config.show_hold_progress:
-            return ()
-        width = self.config.half_width
-        pixels = []
+        bars = []
         for side, status in sorted(telemetry.sides.items()):
-            if status.gesture and status.required > 0:
-                lit = max(_HOLD_MIN_PIXELS, round(min(1.0, status.progress) * width))
-                pixels.append((side, min(width, lit)))
+            if self.config.show_hold_progress and status.gesture and status.required > 0:
+                bars.append(_Bar(side, "hold", min(1.0, max(0.0, status.progress)),
+                                 1.0 / status.required, now))
+            elif (self.config.show_cooldown and status.cooldown_remaining > 0
+                  and status.cooldown_total > 0):
+                remaining = min(1.0, status.cooldown_remaining / status.cooldown_total)
+                bars.append(_Bar(side, "cooldown", remaining,
+                                 -1.0 / status.cooldown_total, now))
+        return tuple(bars)
+
+    def _bar_pixels(self, bars: tuple[_Bar, ...], now: float) -> BarPixels:
+        """此刻各状态条该亮几个像素。
+
+        遥测一秒只来四五次，直接照着画条是一跳一跳的；这里按上一次遥测的速度
+        往后推到 now，渲染线程每 `_ANIMATION_TICK` 调一次，条就是连续动的。
+        只有一方有状态时用整个底边，两方都有就各用自己那半边。
+        进度为 0（手势刚被认出）时识别条也至少亮一小段 —— 它首先是"看见你了"的反馈。
+        """
+        width = self.config.half_width * (2 if len(bars) == 1 else 1)
+        pixels = []
+        for bar in bars:
+            age = min(max(0.0, now - bar.at), _MAX_EXTRAPOLATION)
+            fraction = min(1.0, max(0.0, bar.fraction + bar.rate * age))
+            lit = round(fraction * width)
+            if bar.kind == "hold":
+                lit = max(lit, round(width * _HOLD_MIN_FRACTION))
+            if lit > 0:
+                pixels.append((bar.side, bar.kind, lit))
         return tuple(pixels)
 
     def close(self) -> None:
@@ -177,15 +221,19 @@ class LedDisplay(Display):
         drawn: tuple | None = None
         blink_at = 0.0
         winner_lit = True
+        animating = False
 
         while not self._stop.is_set():
-            self._wake.wait(timeout=_TICK)
+            self._wake.wait(timeout=_ANIMATION_TICK if animating else _TICK)
             self._wake.clear()
             with self._lock:
                 snapshot = self._latest
-                hold = self._hold
+                bars = self._bars
             if snapshot is None:
                 continue
+            # 像素数没变就不会重画，所以补帧只在条真的动了一格时才写 SPI
+            pixels = self._bar_pixels(bars, time.monotonic())
+            animating = bool(pixels)
 
             # 获胜方的数字要一直闪，所以不能只靠 version 变化决定重画
             if snapshot.winner:
@@ -198,7 +246,7 @@ class LedDisplay(Display):
                 winner_lit, blink_at, dark = True, 0.0, None
 
             state = (snapshot.version, snapshot.left, snapshot.right,
-                     snapshot.match_points, dark, hold)
+                     snapshot.match_points, dark, pixels)
             if drawn is not None and snapshot.flash_seq != self._drawn_flash:
                 try:
                     self._flash(snapshot)
@@ -206,9 +254,11 @@ class LedDisplay(Display):
                     log.exception("LED render failed; retrying on next update")
                     drawn = None
                     continue
+                # 闪烁的最后一帧不带状态条：记成"没画条"，下一圈就会把冷却条补上
+                state = state[:-1] + ((),)
             elif state != drawn:
                 try:
-                    self._draw(snapshot, dark=dark, hold=dict(hold))
+                    self._draw(snapshot, dark=dark, bars=pixels)
                 except Exception:
                     log.exception("LED render failed; retrying on next update")
                     drawn = None
@@ -223,11 +273,11 @@ class LedDisplay(Display):
             time.sleep(_FLASH_INTERVAL)
 
     def _draw(self, snapshot: Snapshot, *, dark: str | None = None,
-              hold: dict[str, int] | None = None) -> None:
-        """把左右比分画到各自的一半上。
+              bars: BarPixels = ()) -> None:
+        """把左右比分画到各自的一半上，再画最底下一行的状态条。
 
-        dark  指定哪一侧熄灭（闪烁用）。
-        hold  正在保持手势的半场 -> 底部进度条的像素数。
+        dark  指定哪一侧的数字熄灭（闪烁用）。
+        bars  `_bar_pixels` 的结果：哪一方、哪种状态条、亮几个像素。
         """
         from luma.core.legacy import text
         from luma.core.legacy.font import CP437_FONT
@@ -236,6 +286,8 @@ class LedDisplay(Display):
         half = self.config.half_width
         digits = self.config.digits_per_side
         left_x, right_x = (half, 0) if self.config.reverse_blocks else (0, half)
+        origin = {"left": left_x, "right": right_x}
+        last = half * 2 - 1
 
         with canvas(self._device) as draw:
             for side, x, value in (("left", left_x, snapshot.left),
@@ -245,11 +297,23 @@ class LedDisplay(Display):
                 # 定宽字体 + 右对齐：个位永远在同一格，看着不跳
                 text(draw, (x, 0), f"{value:0{digits}d}"[-digits:],
                      fill="white", font=CP437_FONT)
-                lit = (hold or {}).get(side, 0)
-                if lit > 0:
-                    # 保持进度条和赛点下划线共用最底下一行（数字只用到第 0~6 行）。
-                    # 保持期间只画进度条：赛点的整条下划线会把它盖住，看不出在涨。
-                    draw.line((x, 7, x + lit - 1, 7), fill="white")
-                elif self.config.show_match_point and side in snapshot.match_points:
+                # 状态条和赛点下划线共用最底下一行。有状态条时整行都让给它：
+                # 赛点的整条实线会和识别条混在一起，看不出条在涨。
+                if (not bars and self.config.show_match_point
+                        and side in snapshot.match_points):
                     # 塞不下文字，用底部一条下划线标赛点；静态不闪 —— 赛点时球还在打
                     draw.line((x, 7, x + half - 1, 7), fill="white")
+
+            for side, kind, lit in bars:
+                # 条固定在本方的外侧边缘：画在屏左半的那一方从最左往右长，另一方从最右往左长
+                from_left = origin[side] == 0
+                if kind == "hold":
+                    span = (0, 7, lit - 1, 7) if from_left else (last - lit + 1, 7, last, 7)
+                    draw.line(span, fill="white")
+                else:
+                    # 冷却用虚线（隔一个点亮一个），单色屏上和识别的实线一眼能分开。
+                    # 从固定在边缘的那个点起隔点亮，条缩短时剩下的点不会跟着跳。
+                    step = 1 if from_left else -1
+                    start = 0 if from_left else last
+                    draw.point([(start + step * offset, 7) for offset in range(0, lit, 2)],
+                               fill="white")
