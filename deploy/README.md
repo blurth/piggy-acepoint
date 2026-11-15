@@ -191,9 +191,30 @@ unit 里 `StartLimitIntervalSec=0` 是有意的：systemd 默认 10 秒内重启
 
 ## 7. 只读文件系统
 
+设备没有关机键，球场上就是直接拔充电宝，所以装好、调好之后必须开。树莓派要能联网
+（第一次开启会 `apt install overlayroot`），在家里做，别等到球场。
+
 ```bash
-sudo raspi-config   # Performance Options -> Overlay File System -> Enable
+# 顺序不能反：启动分区只读要改 /etc/fstab，只读系统生效后就改不了了
+sudo raspi-config nonint enable_bootro && sudo raspi-config nonint enable_overlayfs && sudo reboot
+findmnt -no FSTYPE /            # 重启后应为 overlay
 ```
+
+等价的菜单操作是 `sudo raspi-config` -> Performance Options -> Overlay File System，
+两个问题都选 Yes。原理是内核参数 `overlayroot=tmpfs`：SD 卡上的根分区只读挂载，
+所有写入落在内存里的上层。
+
+**开启后的任何改动重启就没了** —— 程序更新、`config.pi.toml`、录的标定素材都是。
+`pi_update.sh` 检测到只读会提醒。要让改动留下来，走一遍维护流程：
+
+```bash
+sudo raspi-config nonint disable_overlayfs && sudo reboot     # 1. 关只读
+cd ~/piggy-acepoint && git pull && bash deploy/pi_update.sh   # 2. 更新 / 改配置 / 标定
+sudo raspi-config nonint enable_overlayfs && sudo reboot      # 3. 开只读
+```
+
+（启动分区的只读不用动：`disable_overlayfs` 会自己临时把它挂成可写去改 `cmdline.txt`。）
+反过来这也是个安全网：只读开着时先跑一遍更新当试运行，不满意重启就恢复原样。
 
 需求 §3.3.4 要求拔电即关机不损坏 TF 卡。开启后注意两点：
 
@@ -202,6 +223,7 @@ sudo raspi-config   # Performance Options -> Overlay File System -> Enable
   事后无从查起。这是这台无网设备唯一的可观测性缺口。
 - 别在只读系统上加文件日志：它会在内存里无限增长，和 MediaPipe 的约 352MB
   一起挤 2GB 内存，最后 OOM。同时确认 `dphys-swapfile` 已关闭。
+  （现在这台是 8GB 的 Pi 4，交换分区是 zram，不占 SD 卡；换成 2GB 的板子要重新核对。）
 
 要留现场记录，在 SD 上单独分一个小分区挂 `noatime`，把 journald 指过去；
 那个分区损坏不影响启动，正是 §3.3.4 真正要保护的东西。验收阶段也可以只在

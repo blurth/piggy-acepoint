@@ -18,6 +18,13 @@ exec > >(tee "$LOG") 2>&1
 step() { echo; echo "=== $*"; }
 fail() { echo; echo "!!! 失败：$*"; echo "完整日志：$LOG"; exit 1; }
 
+if grep -q "overlayroot=tmpfs" /proc/cmdline; then
+    echo
+    echo "!! 只读文件系统已开启：这次更新只写进内存，重启后就没了（可以当试运行）。"
+    echo "   要让更新留在 SD 卡上，按 deploy/README.md 第 7 节走一遍维护流程："
+    echo "   关只读 -> 重启 -> 更新 -> 开只读 -> 重启"
+fi
+
 [ -d "$APP/src" ] || fail "找不到 $APP/src —— 先完成安装"
 [ -x "$VENV/bin/acepoint" ] || fail "找不到 $VENV/bin/acepoint —— 先完成安装"
 
