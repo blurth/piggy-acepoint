@@ -128,3 +128,16 @@ def test_cli_overrides(tmp_path):
     assert by_side["left"].kind == "video" and by_side["left"].path == "videos/A.mp4"
     assert by_side["right"].kind == "camera"          # 没覆盖的那路保持原样
     assert config.display.backends == ("led", "console")   # 原配置不被修改
+
+
+def test_camera_device_accepts_stable_path(tmp_path):
+    by_id = "/dev/v4l/by-id/usb-openaicam_openaicam_2505121128-video-index0"
+    path = write(tmp_path, f'[[sources]]\nside = "left"\nkind = "camera"\ndevice = "{by_id}"\n')
+    assert load_config(path).sources[0].device == by_id
+
+
+@pytest.mark.parametrize("device", ['""', "true", "1.5"])
+def test_camera_device_rejects_nonsense(tmp_path, device):
+    path = write(tmp_path, f'[[sources]]\nside = "left"\nkind = "camera"\ndevice = {device}\n')
+    with pytest.raises(ConfigError, match="device"):
+        load_config(path)

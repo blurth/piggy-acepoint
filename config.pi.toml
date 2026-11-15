@@ -68,6 +68,9 @@ spi_device = 0
 # 布局：左半场两位数字占 0~15px，右半场占 16~31px，没有冒号的位置。
 # 分出胜负时获胜方的两位数字闪烁（塞不下 "WIN" 文字），另一侧保持常亮。
 
+# device 可以写设备号，但编号重启后可能变、左右会静默对调。装盒前改成稳定路径：
+#   ls -l /dev/v4l/by-id/   然后写成  device = "/dev/v4l/by-id/usb-..._<序列号>-video-index0"
+# 详见 deploy/README.md 第 4 节
 [[sources]]
 side = "left"
 kind = "camera"

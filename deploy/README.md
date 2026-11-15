@@ -87,13 +87,24 @@ acepoint --check -c config.pi.toml
 > ⚠️ **设备号会变。** `/dev/videoN` 的编号跟 USB 枚举顺序走，重启可能对调，
 > 而 BOM §2 要求同型号一对（VID:PID 相同、多半没有唯一序列号）。
 > 后果不是崩溃，是**左右半场静默对调**，整场比分加反。
-> 装盒前请改用按物理插座寻址的稳定路径，写进 `config.pi.toml`：
+> 装盒前请把 `config.pi.toml` 里的 `device` 改成稳定路径（字符串）：
 >
 > ```bash
-> ls -l /dev/v4l/by-path/     # 形如 platform-xhci-hcd.1-usb-0:1.1:1.0-video-index0
+> ls -l /dev/v4l/by-id/       # 按序列号：usb-openaicam_openaicam_2505121128-video-index0
+> ls -l /dev/v4l/by-path/     # 按 USB 口：...-usb-0:1.1:1.0-video-index0
 > ```
 >
-> （当前 `SourceConfig.device` 只接受整数，改用路径需要先把它放宽成 `int | str`。）
+> 微雪 OV2735 每只有独立序列号，优先用 `by-id`：换 USB 口也不会左右颠倒。
+> 没有序列号的摄像头才用 `by-path`，这时插口就不能再换。
+>
+> ```toml
+> [[sources]]
+> side = "left"
+> device = "/dev/v4l/by-id/usb-openaicam_openaicam_2505121128-video-index0"
+> ```
+>
+> 路径不存在（没插、序列号写错）时只停用这一半场，另一半照常计分，日志会写
+> `camera ... not found`。
 
 ## 5. 跑一次实测标定
 

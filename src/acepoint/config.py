@@ -109,7 +109,9 @@ class GameConfig:
 class SourceConfig:
     side: str
     kind: str = "camera"                   # "camera" | "video"
-    device: int = 0                        # kind=camera: V4L2/DShow 设备号
+    # kind=camera: 设备号，或设备路径。Pi 上推荐写 /dev/v4l/by-id/...（按序列号）
+    # 或 /dev/v4l/by-path/...（按 USB 口）—— 数字编号重启后可能变，左右会静默对调
+    device: int | str = 0
     path: str = ""                         # kind=video: 视频文件路径
     loop: bool = True                      # kind=video: 播完循环
     realtime: bool = True                  # kind=video: 按视频真实 fps 对齐挂钟时间
@@ -128,6 +130,9 @@ class SourceConfig:
             raise ConfigError(f"source.side 只能是 {SIDES}, 当前 {self.side!r}")
         if self.kind not in ("camera", "video"):
             raise ConfigError(f"source.kind 只能是 camera/video, 当前 {self.kind!r}")
+        if isinstance(self.device, bool) or not isinstance(self.device, (int, str)) \
+                or (isinstance(self.device, str) and not self.device.strip()):
+            raise ConfigError(f"[{self.side}] device 只能是设备号或设备路径, 当前 {self.device!r}")
         if self.kind == "video" and not self.path:
             raise ConfigError(f"[{self.side}] kind=video 必须提供 path")
         for name in ("crop_w_ratio", "crop_h_ratio"):
