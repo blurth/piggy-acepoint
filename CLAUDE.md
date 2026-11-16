@@ -54,6 +54,8 @@ bash deploy/pi_update.sh                    # on the device: pull, copy into ~/A
 curl -s localhost:8080/api/state            # per-side fps and recognize_ms — the numbers that say whether the Pi keeps up
 ```
 
+The device runs with the overlay file system on (`overlayroot=tmpfs`, boot partition read-only) because it has no power switch and is unplugged hot. Anything written there — an update, a config edit, calibration footage — is gone at the next reboot; `pi_update.sh` warns when it sees the overlay. To make a change stick: `sudo raspi-config nonint disable_overlayfs` → reboot → change → `enable_overlayfs` → reboot (deploy/README.md §7).
+
 The Pi 4 cannot run mediapipe 1.x: its aarch64 wheel needs ARMv8 AES, which the BCM2711 lacks, so the process dies with SIGILL at startup. The device runs Python 3.12 (via uv) + mediapipe 0.10.18 — `deploy/pi4_mediapipe_fix.sh`. The dev machine is on 1.0.0; keep `recognition.py` on the `tasks` API that both versions share.
 
 Tuning parameters live in `config.toml` / `config.pi.toml` (spec §7) — never re-introduce module-level constants for them.
