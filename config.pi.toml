@@ -65,7 +65,8 @@ preview = false                       # Pi 上开预览会明显吃 CPU
 allow_manual = true
 
 [display.led]
-brightness = 60                       # 0~255，越高越费电
+brightness = 72                       # 0~255，越高越费电。MAX7219 实际只有 16 档（每 16 一档）：
+                                      # 72 = 第 4 档；原来的 60 是第 3 档，实机看着偏暗
 cascaded = 4                          # 4 块 8x8：左右各两块，每边两位数字
 block_orientation = -90               # 显示乱码/倒置就调这个（0 / 90 / -90 / 180）
 rotate = 0
