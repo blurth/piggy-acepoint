@@ -27,8 +27,10 @@ decode_on_demand = true               # 只解码真正要用的帧。相机出 
                                       # 相机表现异常（某半场离线、帧率掉到 1~2）就改回 false
 width = 1920                          # 必须是摄像头支持的 MJPEG 分辨率
 height = 1080
-crop_w_ratio = 0.6                    # 识别区：画面中央 60% x 80%（需求 §5.2）
-crop_h_ratio = 0.8
+crop_w_ratio = 0.5                    # 识别区：画面中央 50% x 50%，等于把画面拉近一倍
+crop_h_ratio = 0.5                    # （2026-11 球场实测后改，原来是 0.6 x 0.8，距离不够）。
+                                      # 长边 1152px -> 960px，同样大小的手能认到的距离约 1.2 倍；
+                                      # 还不够远就继续收（0.33 = 拉近三倍），代价是站位要更准
 crop_cx_ratio = 0.5                   # 识别区中心，0.5/0.5 = 画面正中
 crop_cy_ratio = 0.5
 # 上面四个值**必须上机后重标**，尤其是中心。开发用的 config.toml 已经不是居中了：
@@ -38,13 +40,16 @@ crop_cy_ratio = 0.5
 # 标定办法：录一段真实比划，跑 scripts/compare_roi.py --ratios 扫中心和大小。
 
 [scoring]
-hold_seconds = 0.5                    # 加分(Victory/Pointing_Up) / 撤销(Thumb_Down) 保持时长
+hold_seconds = 0.25                   # 加分(Victory/Pointing_Up) / 撤销(Thumb_Down) 保持时长。
+                                      # 2026-11 球场实测嫌慢，由 0.5 减半。相位扫描：实机 3.8~5fps 下
+                                      # 触发率和 0.5 时完全一样（卡的是 hold_min_samples，不是时长），
+                                      # ≤0.2 秒的闪现仍是 0%，手势出现到计分从约 0.7 秒降到 0.4~0.6 秒
 hold_grace_seconds = 0.4              # 保持期间容忍手势丢检多久(约 2 个采样点)
 hold_min_samples = 2                  # 必须真正识别到几次才算数(防单次闪现误触)。
                                       # 球馆实测误加分偏多的话优先调高这个，而不是调 hold_seconds
                                       # 这两个值由手持竖屏素材标定，上机后需用真实网前
                                       # 横屏素材重新验证(需求 §10 阶段2)
-reset_hold_seconds = 3.0
+reset_hold_seconds = 1.5              # 清零(Open_Palm)保持时长，同样由 3.0 减半
 cooldown_seconds = 5.0                # 计分后该半场冷却
 
 [game]
@@ -53,7 +58,7 @@ target = 21
 win_by = 2
 cap = 30                              # 29:29 后先到 30 者直接获胜
 # 分出胜负后点阵屏在比分和 "L WIN"/"R WIN" 之间每 2 秒轮换，
-# 本局冻结（加分忽略、撤销可用），张开手掌 3 秒开下一局
+# 本局冻结（加分忽略、撤销可用），张开手掌 1.5 秒开下一局
 
 [display]
 backends = ["led", "console"]         # 想在手机上远程看比分就加 "web"
