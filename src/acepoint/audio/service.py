@@ -33,6 +33,7 @@ class AudioService:
         # 每说一句带文字的台词加一：显示端（点阵屏）靠它判断"来了新的一句"，
         # 同一句台词连说两次也能分出来
         self.caption = ""
+        self.caption_event = ""           # 台词对应的场景（streak_3、match_point……），点阵屏按它出图标
         self.caption_seq = 0
         self.error = ""
         self.status = "starting" if config.enabled else "disabled"
@@ -79,7 +80,8 @@ class AudioService:
                     "style": self.config.style, "mode": self.config.mode,
                     "allow_control": self.config.allow_web_control,
                     "last_text": self.last_text,
-                    "caption": self.caption, "caption_seq": self.caption_seq}
+                    "caption": self.caption, "caption_event": self.caption_event,
+                    "caption_seq": self.caption_seq}
 
     def configure(self, body):
         with self._lock:
@@ -210,6 +212,7 @@ class AudioService:
                 self.last_text = clip["text"]
                 if clip["text"]:
                     self.caption = clip["text"]
+                    self.caption_event = candidate.name
                     self.caption_seq += 1
                 if not preview:
                     self.played[candidate.key] = now

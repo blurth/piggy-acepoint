@@ -164,3 +164,72 @@ def test_audio_service_counts_each_spoken_line(tmp_path):
     snap = service.snapshot()
     assert snap["caption_seq"] >= 1
     assert snap["caption"]
+    assert snap["caption_event"] in ("streak_3", "banter", "icebreaker")
+
+
+# ------------------------------------------------------------ 图标画面
+
+from acepoint.displays.led_captions import (  # noqa: E402
+    PAGE_SECONDS, SCENES, pick_scene, render_page, scene_frame)
+
+
+def test_every_moment_with_a_spoken_line_has_a_picture():
+    """有台词的事件都要有图标画面，否则点阵屏又退回糊掉的中文。"""
+    from acepoint.audio.policy import PRIORITIES
+
+    assert set(PRIORITIES) - {"point"} <= set(SCENES)
+
+
+def test_every_page_fits_the_screen_in_both_frames():
+    for options in SCENES.values():
+        for pages in options:
+            for page in pages:
+                for frame in (0, 1):
+                    columns = render_page(page, frame)
+                    assert len(columns) == 32 and any(columns), page
+                    assert all(c < 128 for c in columns), page   # 第 8 行留空
+
+
+def test_pages_rotate_and_icons_animate():
+    pages = ("{heart}NICE", "{heart}{heart}{heart}")
+    assert scene_frame(pages, 0.0) == render_page(pages[0], 0)
+    assert scene_frame(pages, 0.35) == render_page(pages[0], 1)      # 爱心跳一下
+    assert scene_frame(pages, PAGE_SECONDS + 0.01) == render_page(pages[1], 0)
+    assert scene_frame(pages, 2 * PAGE_SECONDS + 0.01) == render_page(pages[0], 0)
+
+
+def test_banter_does_not_repeat_the_same_picture_twice_in_a_row():
+    import random
+
+    rng, previous = random.Random(1), None
+    for _ in range(20):
+        index, _pages = pick_scene("banter", rng, previous)
+        assert index != previous
+        previous = index
+
+
+def test_icons_style_shows_the_scene_and_text_style_the_chinese_line():
+    def caption_for(style):
+        display = LedDisplay(LedConfig(caption_style=style))
+        for seq in (0, 1):
+            display.update(Telemetry(snapshot=Snapshot(version=1), sides={}, audio={
+                "caption": "三连击！手感来了！", "caption_event": "streak_3",
+                "caption_seq": seq}))
+        return display._caption
+
+    assert caption_for("icons").pages in SCENES["streak_3"]
+    text = caption_for("text")
+    assert not text.pages and text.columns == caption_columns("三连击！手感来了！")
+
+
+def test_unknown_moment_falls_back_to_the_chinese_line():
+    display = LedDisplay(LedConfig())
+    for seq in (0, 1):
+        display.update(Telemetry(snapshot=Snapshot(version=1), sides={}, audio={
+            "caption": "好球", "caption_event": "something_new", "caption_seq": seq}))
+    assert display._caption.columns == caption_columns("好球")
+
+
+def test_caption_style_is_validated():
+    with pytest.raises(ConfigError):
+        LedConfig(caption_style="emoji")

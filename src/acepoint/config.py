@@ -236,6 +236,9 @@ class LedConfig:
     # 要台词就得开 [audio]（没音响用 backend = "null"）
     show_captions: bool = True
     caption_seconds: float = 5.0
+    # "icons"：图标动画 + 英文短词（led_captions.py，8px 中文远看太糊）；
+    # 某个场景没画面时退回中文。"text"：一律滚动中文台词
+    caption_style: str = "icons"
 
     def __post_init__(self) -> None:
         if self.cascaded < 2 or self.cascaded % 2:
@@ -243,6 +246,8 @@ class LedConfig:
                 f"display.led.cascaded 必须是 >=2 的偶数（左右各一半），当前 {self.cascaded}")
         if self.caption_seconds <= 0:
             raise ConfigError("display.led.caption_seconds 必须 > 0")
+        if self.caption_style not in ("icons", "text"):
+            raise ConfigError('display.led.caption_style 只能是 "icons" 或 "text"')
 
     @property
     def half_width(self) -> int:

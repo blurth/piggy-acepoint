@@ -18,10 +18,15 @@
 
 只有一方有状态时状态条占满整个底边（32px）；两方同时有就各用自己那半边。
 
-氛围台词（语音模块说"三连击！""赛点！"之类的时候）整屏让给字幕：8px 中文
-点阵字（led_glyphs.json，由 scripts/build_led_glyphs.py 从 Fusion Pixel Font 生成），
-放得下就居中静止，放不下就先停在开头、滚到结尾再停，总共 caption_seconds 秒，
-然后切回比分。比分变了、或者有人开始比手势，字幕立刻让位 —— 比分和识别反馈优先。
+氛围时刻（语音模块挑出"三连击""赛点"之类台词的时候）整屏让给氛围画面
+caption_seconds 秒，然后切回比分：
+
+- caption_style = "icons"（默认）：led_captions.py 里手绘的图标动画 + 英文短词，
+  分页静止轮换。8px 中文笔画一多就糊，远处认不出，所以默认不用中文；
+- 场景没有画面、或 caption_style = "text"：8px 中文台词（led_glyphs.json，由
+  scripts/build_led_glyphs.py 从 Fusion Pixel Font 生成），放得下居中，放不下滚动。
+
+比分变了、或者有人开始比手势，氛围画面立刻让位 —— 比分和识别反馈优先。
 
 渲染放在独立线程：闪烁要 sleep，绝不能卡住识别主循环。
 """
@@ -36,8 +41,11 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
+import random
+
 from acepoint.config import LedConfig
 from acepoint.displays.base import Display
+from acepoint.displays.led_captions import pick_scene, scene_frame
 from acepoint.state import Snapshot, Telemetry
 
 log = logging.getLogger(__name__)
@@ -71,9 +79,10 @@ class _Bar:
 class _Caption:
     """正在显示的一句氛围台词。"""
 
-    columns: tuple[int, ...]   # 整句的点阵，每列一个整数，第 r 位 = 第 r 行
+    columns: tuple[int, ...]   # 中文台词整句的点阵，每列一个整数，第 r 位 = 第 r 行
     start: float               # 开始显示的时刻（monotonic）
     version: int               # 开始时的比分版本；比分一变字幕就让位
+    pages: tuple[str, ...] = ()   # 有就显示图标画面（led_captions），columns 不用
 
 
 @lru_cache(maxsize=1)
@@ -121,6 +130,8 @@ class LedDisplay(Display):
         self._drawn_flash = -1
         self._caption: _Caption | None = None
         self._caption_seq = None          # 第一次遥测只记下序号，不把开机前的旧台词翻出来
+        self._rng = random.Random()
+        self._last_scene: dict[str, int] = {}
 
     # ------------------------------------------------------------ 生命周期
 
@@ -184,6 +195,12 @@ class LedDisplay(Display):
         previous, self._caption_seq = self._caption_seq, seq
         if previous is None or seq == previous or not self.config.show_captions:
             return None
+        event = audio.get("caption_event") or ""
+        if self.config.caption_style == "icons":
+            scene = pick_scene(event, self._rng, self._last_scene.get(event))
+            if scene is not None:
+                self._last_scene[event] = scene[0]
+                return _Caption((), now, telemetry.snapshot.version, scene[1])
         text = audio.get("caption") or ""
         try:
             columns = caption_columns(text)
@@ -314,12 +331,19 @@ class LedDisplay(Display):
 
             caption = self._active_caption(time.monotonic())
             if caption is not None:
-                offset = caption_offset(len(caption.columns), time.monotonic() - caption.start,
-                                        self.config.caption_seconds, self.config.half_width * 2)
-                state = ("caption", caption.start, offset)
+                elapsed = time.monotonic() - caption.start
+                width = self.config.half_width * 2
+                if caption.pages:
+                    columns, offset = scene_frame(caption.pages, elapsed, width), 0
+                else:
+                    columns = caption.columns
+                    offset = caption_offset(len(columns), elapsed,
+                                            self.config.caption_seconds, width)
+                # 只在画面真的变了（换页、图标换帧、滚了一列）时才写 SPI
+                state = ("caption", caption.start, columns if caption.pages else offset)
                 if state != drawn:
                     try:
-                        self._draw_caption(caption.columns, offset)
+                        self._draw_caption(columns, offset)
                     except Exception:
                         log.exception("LED render failed; retrying on next update")
                         drawn = None

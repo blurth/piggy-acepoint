@@ -90,9 +90,11 @@ show_match_point = true               # 赛点时在该侧底部画一条下划�
 show_hold_progress = true             # 识别条：底部一条实线，一认出手势就亮，从该方外侧边缘
                                       # 向对面变长，涨满即计分 —— 不看网页时唯一的即时反馈
 show_cooldown = true                  # 冷却条：计分后底部一条虚线，缩完才能再比手势
-show_captions = true                  # 氛围台词（三连击、赛点、逆转……）用 8px 中文整屏滚动，
-caption_seconds = 5.0                 # 显示这么久再切回比分。比分变了或有人比手势会提前切回。
-                                      # 台词来自下面的 [audio]，所以 [audio] 必须开着
+show_captions = true                  # 氛围时刻（三连击、赛点、逆转……）整屏显示氛围画面，
+caption_seconds = 5.0                 # 这么久后切回比分。比分变了或有人比手势会提前切回。
+                                      # 时机来自下面的 [audio]，所以 [audio] 必须开着
+caption_style = "icons"               # "icons" = 图标动画 + 英文短词（效果图 docs/screenshots/
+                                      # led-scenes.png）；"text" = 8px 中文台词滚动（远看糊）
 bus_speed_hz = 500000                 # 实机实测：8MHz 下四块屏时亮时灭，0.5MHz 稳定。
                                       # 根因是 3.3V 电平余量不足（见 deploy/README.md），
                                       # 加了电平转换后可以再往上调
