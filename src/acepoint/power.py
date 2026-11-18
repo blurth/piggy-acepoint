@@ -25,14 +25,29 @@ SUDOERS_HINT = ("在树莓派上授权一次：echo 'moray ALL=(root) NOPASSWD: 
 
 
 def can_poweroff() -> bool:
-    """sudo 是否允许免密执行关机（不会真的关）。"""
+    """sudo 是否允许**免密**执行关机（不会真的关）。
+
+    不能用 `sudo -n -l <命令>` 的退出码判断：树莓派的用户通常有
+    `(ALL : ALL) ALL`（要密码），它照样返回 0，结果网页说能关、真关时 sudo 要密码失败。
+    所以读 `sudo -n -l` 的清单，只认 NOPASSWD 下面一字不差的这条（或 NOPASSWD: ALL）。
+    """
     if os.name == "nt":
         return False
     try:
-        result = subprocess.run(["sudo", "-n", "-l", *POWEROFF], capture_output=True, timeout=5)
+        result = subprocess.run(["sudo", "-n", "-l"], capture_output=True, text=True, timeout=5)
     except (OSError, subprocess.TimeoutExpired):
         return False
-    return result.returncode == 0
+    return result.returncode == 0 and nopasswd_allows(result.stdout, " ".join(POWEROFF))
+
+
+def nopasswd_allows(listing: str, command: str) -> bool:
+    for line in listing.splitlines():
+        if "NOPASSWD:" not in line:
+            continue
+        allowed = [c.strip() for c in line.split("NOPASSWD:", 1)[1].split(",")]
+        if command in allowed or "ALL" in allowed:
+            return True
+    return False
 
 
 def poweroff() -> None:

@@ -113,3 +113,23 @@ def test_ip_display_can_be_switched_off(monkeypatch):
     display = LedDisplay(LedConfig(show_ip=False))
     display._check_ip(0.0)
     assert display._caption is None
+
+
+DEVICE_LISTING = """User moray may run the following commands on ace:
+    (ALL : ALL) ALL
+    (root) NOPASSWD: /usr/bin/systemctl start acepoint, /usr/bin/systemctl stop acepoint
+    (root) NOPASSWD: /usr/bin/raspi-config nonint enable_overlayfs, /usr/bin/systemctl reboot
+"""
+
+
+def test_password_protected_sudo_does_not_count():
+    """实机就是这样：(ALL : ALL) ALL 要密码，网页按钮不能当作能关机。"""
+    assert not power.nopasswd_allows(DEVICE_LISTING, "/usr/bin/systemctl poweroff")
+
+
+def test_the_exact_nopasswd_grant_counts():
+    granted = DEVICE_LISTING + "    (root) NOPASSWD: /usr/bin/systemctl poweroff\n"
+    assert power.nopasswd_allows(granted, "/usr/bin/systemctl poweroff")
+    assert power.nopasswd_allows("    (ALL) NOPASSWD: ALL\n", "/usr/bin/systemctl poweroff")
+    assert not power.nopasswd_allows(
+        "    (root) NOPASSWD: /usr/bin/systemctl poweroff --force\n", "/usr/bin/systemctl poweroff")
