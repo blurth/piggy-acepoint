@@ -109,6 +109,19 @@ kind = "camera"
 device = 2
 mirror = false
 
+[record]
+# 边计分边录像 + 计分日志，实测和标定期间开着，正式使用时关掉省 CPU 和 SD 卡。
+# 每次开机在 recordings/<日期_时间>/ 下生成：left_000.mkv ...（识别用的那一帧，
+# 整帧不裁、对齐挂钟，可直接喂 scripts/ 下的分析工具）、events.csv（每路每拍一行：
+# 认到什么、置信度、计时/冷却、加分）、acepoint.log（程序日志，journald 重启就没）。
+# 注意：只读文件系统开着时写进的是内存，重启即丢，而且会把内存写满 —— 录像期间关只读。
+enabled = true
+dir = "recordings"
+video = true
+jpeg_quality = 85
+segment_minutes = 10                  # 分段，热拔电最多坏掉最后一段
+min_free_gb = 2.0                     # SD 卡剩余低于此值停止录像，日志照记
+
 [audio]
 # 安装 pip install -e ".[audio]"，运行 acepoint --audio-test 试听后开启。
 enabled = false

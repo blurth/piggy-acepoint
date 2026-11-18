@@ -108,6 +108,31 @@ class ScoringConfig:
 
 
 @dataclass(frozen=True)
+class RecordConfig:
+    """边计分边录像 + 计分日志，留给事后调试和重新标定。
+
+    录的是识别真正用到的那一帧（每路约 5fps、整帧、不裁识别区），所以录像
+    能直接喂给 scripts/ 里的分析工具；events.csv 每拍一行，记下当时认到了
+    什么、状态机在计时还是冷却 —— "那次为什么没加分" 对着它查。
+    """
+
+    enabled: bool = False
+    dir: str = "recordings"                # 相对配置文件所在目录
+    video: bool = True                     # 关掉就只记日志
+    jpeg_quality: int = 85
+    segment_minutes: float = 10.0          # 分段：热拔电最多坏掉最后一段
+    min_free_gb: float = 2.0               # 磁盘剩余低于此值就停止录像（日志照记）
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.jpeg_quality <= 100:
+            raise ConfigError("record.jpeg_quality 必须在 1~100 之间")
+        if self.segment_minutes <= 0:
+            raise ConfigError("record.segment_minutes 必须 > 0")
+        if self.min_free_gb < 0:
+            raise ConfigError("record.min_free_gb 不能为负")
+
+
+@dataclass(frozen=True)
 class GameConfig:
     """21 分制赛制（需求 §5.5）。"""
 
@@ -242,6 +267,7 @@ class Config:
     scoring: ScoringConfig = field(default_factory=ScoringConfig)
     game: GameConfig = field(default_factory=GameConfig)
     display: DisplayConfig = field(default_factory=DisplayConfig)
+    record: RecordConfig = field(default_factory=RecordConfig)
     sources: tuple[SourceConfig, ...] = ()
     root: Path = Path(".")
 
@@ -309,6 +335,7 @@ def load_config(path: str | Path | None = None) -> Config:
         scoring=_build(ScoringConfig, _section(data, "scoring"), "scoring"),
         game=_build(GameConfig, _section(data, "game"), "game"),
         display=display,
+        record=_build(RecordConfig, _section(data, "record"), "record"),
         sources=sources,
         root=path.parent.resolve(),
     )

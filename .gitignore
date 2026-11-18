@@ -16,3 +16,6 @@ camera_right.jpg
 models/*.task
 videos/*
 !videos/.gitkeep
+
+# 边计分边录像的输出（[record]）
+recordings/

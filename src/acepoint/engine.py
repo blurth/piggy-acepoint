@@ -25,6 +25,7 @@ from acepoint.audio.service import AudioService
 from acepoint.displays import build_display
 from acepoint.fsm import GestureFSM
 from acepoint.recognition import GestureReader, Observation
+from acepoint.recorder import SessionRecorder
 from acepoint.sources import Frame, FrameSource, build_sources
 from acepoint.state import Action, ScoreBoard, SideStatus, Telemetry
 
@@ -89,6 +90,8 @@ class ScoringEngine:
         self.display = None
         # 并行识别时每个半场一个单线程池：同一个识别器实例永远只被同一个线程调用
         self._workers: dict[str, ThreadPoolExecutor] | None = None
+        self.recorder: SessionRecorder | None = None
+        self._record_failed = False
         try:
             self.audio = AudioService(config.audio, config.game, config.resolve(config.audio.pack_root))
             self.display = build_display(config, on_action=self._enqueue_manual,
@@ -110,6 +113,14 @@ class ScoringEngine:
                     # 共用一个 VIDEO 模式实例时两路不能同时喂帧
                     log.warning("recognition.parallel 需要 per_source_recognizer = true，"
                                 "已退回左右轮流识别")
+            if config.record.enabled:
+                # 录像起不来不能连累计分：记一笔，照常开工
+                try:
+                    per_side = config.capture.poll_hz / max(1, len(config.sources))
+                    self.recorder = SessionRecorder(config.record, config.resolve(config.record.dir),
+                                                    list(self.sources), per_side)
+                except Exception:                # noqa: BLE001
+                    log.exception("录像/计分日志启动失败，本次不录；计分不受影响")
         except Exception:
             # 别把摄像头句柄和 TFLite 解释器漏在这 —— 显示后端构造失败同样要清干净
             self.close()
@@ -189,6 +200,9 @@ class ScoringEngine:
         for side, worker in (self._workers or {}).items():
             self._safely(functools.partial(worker.shutdown, wait=True, cancel_futures=True),
                          f"停止识别线程 {side}")
+        if getattr(self, "recorder", None) is not None:
+            self._safely(self.recorder.close, "关闭录像")
+            self.recorder = None
         for side, source in self.sources.items():
             self._safely(source.close, f"关闭视频源 {side}")
         if self.reader is not None:
@@ -301,8 +315,36 @@ class ScoringEngine:
             else:
                 log.info("%s %s -> %s", side, action.value, snapshot.text)
 
+        if getattr(self, "recorder", None) is not None:
+            self._record(side, sample, now, action)
+
         if self.display.wants_preview:
             self._publish_preview(side, frame.image, observation)
+
+    # ------------------------------------------------------------------ 录像
+
+    def _record(self, side: str, sample: _Sample, now: float, action: Action | None) -> None:
+        """录这一帧 + 记一行 events.csv。出任何错都只关掉录像，不碰计分。"""
+        try:
+            segment, video_s = "", None
+            if not sample.repeated:              # 重放的帧不重复录，时间轴靠补帧对齐
+                segment, video_s = self.recorder.frame(side, sample.frame.image, now)
+            observation = sample.observation
+            status = self.fsms[side].status(time.monotonic(), confidence=observation.confidence)
+            self.recorder.event(
+                now, side=side, segment=segment or None, video_s=video_s if segment else None,
+                fps=self._fps[side], recognize_ms=sample.elapsed_ms,
+                hands=observation.hands, raw=observation.raw, confidence=observation.confidence,
+                detected=observation.gesture, gesture=status.gesture,
+                held=status.held if status.gesture else None, required=status.required or None,
+                cooldown=status.cooldown_remaining or None,
+                action=action.value if action is not None else None,
+                score=self.board.snapshot().text,
+            )
+        except Exception:                        # noqa: BLE001
+            log.exception("录像/计分日志写入失败，本次运行不再录；计分不受影响")
+            recorder, self.recorder = self.recorder, None
+            self._safely(recorder.close, "关闭录像")
 
     # ------------------------------------------------------------------ 预览
 
@@ -384,6 +426,12 @@ class ScoringEngine:
             if side in self.fsms:
                 self.fsms[side].force_cooldown(time.monotonic())
             log.info("manual %s %s -> %s", side, action.value, snapshot.text)
+            if getattr(self, "recorder", None) is not None:
+                try:
+                    self.recorder.event(time.monotonic(), side=side,
+                                        action=f"manual {action.value}", score=snapshot.text)
+                except Exception:                # noqa: BLE001
+                    log.exception("计分日志写入失败")
 
     # -------------------------------------------------------------- 状态汇总
 

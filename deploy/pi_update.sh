@@ -52,6 +52,13 @@ ensure() {
 ensure '^per_source_recognizer' parallel true
 ensure '^parallel[[:space:]]*=' inference_threads 2
 ensure '^poll_hz' decode_on_demand true
+# 整段新增的配置表：不存在就把仓库里那一段原样追加到末尾
+if grep -q '^\[record\]' "$CONF"; then
+    echo "已有  [record]"
+else
+    { echo; sed -n '/^\[record\]/,/^\[/p' "$REPO/config.pi.toml" | sed '$d'; } >> "$CONF" \
+        && echo "新增  [record]（边计分边录像，见 config.pi.toml 注释）"
+fi
 
 step "停止服务并自检"
 sudo systemctl stop acepoint
