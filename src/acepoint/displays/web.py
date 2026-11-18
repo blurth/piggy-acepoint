@@ -315,13 +315,19 @@ class WebDisplay(Display):
         def api_poweroff():
             from acepoint import power
 
+            # 每种拒绝都记一笔：网页上"点了没反应"时，日志是唯一能分清原因的地方
             if not self.config.allow_poweroff or self._on_poweroff is None:
+                log.warning("poweroff refused from %s: disabled in config", request.remote_addr)
                 return jsonify(error="poweroff disabled"), 403
             body = request.get_json(silent=True) or {}
             if body.get("confirm") is not True:
+                log.warning("poweroff refused from %s: not confirmed", request.remote_addr)
                 return jsonify(error="confirm required"), 400
             if not power.can_poweroff():
+                log.warning("poweroff refused from %s: sudo does not allow it without a password",
+                            request.remote_addr)
                 return jsonify(error="no permission", hint=power.SUDOERS_HINT), 403
+            log.warning("poweroff requested from %s", request.remote_addr)
             self._on_poweroff()
             return jsonify(ok=True), 202
 
