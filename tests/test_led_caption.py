@@ -96,7 +96,7 @@ def test_captions_can_be_switched_off():
 
 def test_render_thread_scrolls_then_returns_to_the_score(monkeypatch):
     monkeypatch.setattr(led_module, "_CAPTION_HOLD", 0.1)
-    display = LedDisplay(LedConfig(caption_seconds=0.6))
+    display = LedDisplay(LedConfig(caption_seconds=0.6, show_ip=False))
     display._device = object()
     frames, scores = [], []
     display._draw_caption = lambda columns, offset: frames.append(offset)

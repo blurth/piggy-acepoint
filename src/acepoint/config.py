@@ -209,6 +209,9 @@ class WebConfig:
     preview_width: int = 480
     preview_quality: int = 60              # JPEG 质量 1~100
     allow_manual: bool = True              # 网页上的 +1/-1/清零 按钮
+    # 网页上的"关机"按钮：没有关机键的设备拔电前先正常关机。同一网络里谁都能点，
+    # 只在自己的网络（手机热点）里用。需要设备上授权 sudo，见 acepoint/power.py
+    allow_poweroff: bool = False
 
 
 @dataclass(frozen=True)
@@ -239,6 +242,8 @@ class LedConfig:
     # "icons"：图标动画 + 英文短词（led_captions.py，8px 中文远看太糊）；
     # 某个场景没画面时退回中文。"text"：一律滚动中文台词
     caption_style: str = "icons"
+    # 连上网（或换了网络）时把本机 IP 一段一段显示出来，手机热点下不用去查地址
+    show_ip: bool = True
 
     def __post_init__(self) -> None:
         if self.cascaded < 2 or self.cascaded % 2:

@@ -153,6 +153,14 @@
   <p id="audio-text" aria-live="polite" style="margin-bottom:0"></p>
   <p id="audio-message" role="status"></p>
 </section>
+{% if allow_poweroff %}
+<section id="power-panel" style="margin:0 auto 20px;padding:18px;border:1px solid #4b2a2a;border-radius:14px;max-width:920px;width:calc(100% - 40px);box-sizing:border-box;background:#1a1214;color:#cbd5e1">
+  <strong style="color:#f87171">设备电源</strong>
+  <p style="font-size:13px;opacity:.75;margin:6px 0 12px">拔电前先点这里正常关机：录像和日志会先收好尾，点阵屏熄灭后，等树莓派上的绿灯不再闪烁（约 20 秒）再拔电。</p>
+  <button id="poweroff" type="button" style="background:#7f1d1d;color:#fff;border:0;border-radius:8px;padding:10px 22px;font:inherit;font-weight:700;cursor:pointer">关机</button>
+  <p id="power-message" role="status" style="font-size:13px;margin-bottom:0"></p>
+</section>
+{% endif %}
 <script>
 const PREVIEW = {{ 'true' if preview else 'false' }};
 const MANUAL = {{ 'true' if allow_manual else 'false' }};
@@ -233,6 +241,25 @@ for (const name of ["muted", "volume", "mode", "style"]) {
   });
 }
 document.getElementById("audio-test").addEventListener("click", () => audioRequest("/api/audio/test", {}));
+
+const powerButton = document.getElementById("poweroff");
+if (powerButton) powerButton.addEventListener("click", async () => {
+  if (!confirm("确定关机？关机后计分停止，要重新插电才能开机。")) return;
+  const message = document.getElementById("power-message");
+  powerButton.disabled = true;
+  try {
+    const response = await fetch("/api/system/poweroff", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({confirm:true})});
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      powerButton.disabled = false;
+      message.textContent = body.hint ? `设备还没授权关机。${body.hint}` : "关机没有生效";
+      return;
+    }
+    message.textContent = "正在关机……点阵屏熄灭后，等绿灯不再闪烁再拔电。";
+  } catch (error) {
+    message.textContent = "正在关机……（连接已断开）";
+  }
+});
 
 function render(state) {
   const a = state.audio || {};

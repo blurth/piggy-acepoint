@@ -77,6 +77,9 @@ host = "0.0.0.0"
 port = 8080
 preview = false                       # Pi 上开预览会明显吃 CPU
 allow_manual = true
+allow_poweroff = true                 # 网页上的"关机"按钮（没有关机键，拔电前先关机）。同一网络里
+                                      # 谁都能点，只在手机热点这种自己的网络里用。设备上要先授权：
+                                      # echo 'moray ALL=(root) NOPASSWD: /usr/bin/systemctl poweroff'                                       #   | sudo tee /etc/sudoers.d/acepoint-poweroff
 
 [display.led]
 brightness = 24                       # 0~255，越高越费电。MAX7219 实际只有 16 档（每 16 一档）：
@@ -93,6 +96,8 @@ show_cooldown = true                  # 冷却条：计分后底部一条虚线�
 show_captions = true                  # 氛围时刻（三连击、赛点、逆转……）整屏显示氛围画面，
 caption_seconds = 5.0                 # 这么久后切回比分。比分变了或有人比手势会提前切回。
                                       # 时机来自下面的 [audio]，所以 [audio] 必须开着
+show_ip = true                        # 连上网 / 换网络时点阵屏分段显示本机 IP（IP -> 192. -> 168. ...），
+                                      # 手机热点下用它找网页地址 http://<IP>:8080
 caption_style = "icons"               # "icons" = 图标动画 + 英文短词（效果图 docs/screenshots/
                                       # led-scenes.png）；"text" = 8px 中文台词滚动（远看糊）
 bus_speed_hz = 500000                 # 实机实测：8MHz 下四块屏时亮时灭，0.5MHz 稳定。

@@ -13,6 +13,7 @@ from __future__ import annotations
 import functools
 import logging
 import queue
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -92,10 +93,12 @@ class ScoringEngine:
         self._workers: dict[str, ThreadPoolExecutor] | None = None
         self.recorder: SessionRecorder | None = None
         self._record_failed = False
+        self._poweroff = threading.Event()        # 网页点了关机：主循环收尾后再关
         try:
             self.audio = AudioService(config.audio, config.game, config.resolve(config.audio.pack_root))
             self.display = build_display(config, on_action=self._enqueue_manual,
-                                         on_audio=self._enqueue_audio, audio_config=config.audio)
+                                         on_audio=self._enqueue_audio, audio_config=config.audio,
+                                         on_poweroff=self.request_poweroff)
             self.display.start()
             self.reader = GestureReader(
                 config.recognition,
@@ -181,6 +184,10 @@ class ScoringEngine:
                     if max_seconds is not None and time.monotonic() - started >= max_seconds:
                         self._stop = True
                         break
+                    if self._poweroff.is_set():
+                        log.warning("关机：停止计分，收尾录像和日志")
+                        self._stop = True
+                        break
 
                     spent = time.monotonic() - slice_start
                     if spent < interval:
@@ -189,9 +196,21 @@ class ScoringEngine:
             log.info("interrupted")
         finally:
             self.close()
+            if self._poweroff.is_set():
+                # 录像、日志、点阵屏都已关好（屏会熄灭）才真正关机
+                from acepoint import power
+
+                try:
+                    power.poweroff()
+                except OSError:
+                    log.exception("关机命令执行失败")
 
     def stop(self) -> None:
         self._stop = True
+
+    def request_poweroff(self) -> None:
+        """网页线程调用：只做标记，收尾和关机都在主线程里做。"""
+        self._poweroff.set()
 
     def close(self) -> None:
         """每一步各自兜异常：一个关不掉不能连累后面的都关不掉。"""

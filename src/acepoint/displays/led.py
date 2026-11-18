@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import logging
+import socket
 import threading
 import time
 from dataclasses import dataclass
@@ -45,7 +46,7 @@ import random
 
 from acepoint.config import LedConfig
 from acepoint.displays.base import Display
-from acepoint.displays.led_captions import pick_scene, scene_frame
+from acepoint.displays.led_captions import PAGE_SECONDS, ip_pages, pick_scene, scene_frame
 from acepoint.state import Snapshot, Telemetry
 
 log = logging.getLogger(__name__)
@@ -60,6 +61,7 @@ _MAX_EXTRAPOLATION = 1.0  # 遥测断了的话最多按上一次的速度往前�
 _CAPTION_TICK = 0.03      # 字幕滚动时的心跳：一秒二三十个像素，太慢的心跳看着一顿一顿
 _CAPTION_HOLD = 0.8       # 长字幕在开头和结尾各停这么久，留时间读
 _GLYPHS = Path(__file__).with_name("led_glyphs.json")
+_IP_CHECK_SECONDS = 5.0   # 多久看一次本机 IP 变没变（连上热点、换了网络）
 
 BarPixels = tuple[tuple[str, str, int], ...]     # (半场, "hold" | "cooldown", 点亮的像素数)
 
@@ -83,6 +85,18 @@ class _Caption:
     start: float               # 开始显示的时刻（monotonic）
     version: int               # 开始时的比分版本；比分一变字幕就让位
     pages: tuple[str, ...] = ()   # 有就显示图标画面（led_captions），columns 不用
+    seconds: float | None = None  # 显示多久；None = caption_seconds
+
+
+def local_ip() -> str | None:
+    """本机对外的 IP（不发任何数据包：UDP 的 connect 只查路由表）。没联网返回 None。"""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("10.255.255.255", 1))
+            ip = probe.getsockname()[0]
+    except OSError:
+        return None
+    return None if ip.startswith(("127.", "0.")) else ip
 
 
 @lru_cache(maxsize=1)
@@ -132,6 +146,8 @@ class LedDisplay(Display):
         self._caption_seq = None          # 第一次遥测只记下序号，不把开机前的旧台词翻出来
         self._rng = random.Random()
         self._last_scene: dict[str, int] = {}
+        self._shown_ip: str | None = None
+        self._ip_next_check = 0.0
 
     # ------------------------------------------------------------ 生命周期
 
@@ -329,6 +345,7 @@ class LedDisplay(Display):
             if snapshot is None:
                 continue
 
+            self._check_ip(time.monotonic())
             caption = self._active_caption(time.monotonic())
             if caption is not None:
                 elapsed = time.monotonic() - caption.start
@@ -391,9 +408,29 @@ class LedDisplay(Display):
     def _active_caption(self, now: float) -> _Caption | None:
         with self._lock:
             caption = self._caption
-            if caption is not None and now - caption.start >= self.config.caption_seconds:
-                self._caption = caption = None
+            if caption is not None:
+                seconds = caption.seconds or self.config.caption_seconds
+                if now - caption.start >= seconds:
+                    self._caption = caption = None
         return caption
+
+    def _check_ip(self, now: float) -> None:
+        """IP 第一次拿到或变了，就把它分段显示两遍。手机热点下靠这个找到网页地址。"""
+        if not self.config.show_ip or now < self._ip_next_check:
+            return
+        self._ip_next_check = now + _IP_CHECK_SECONDS
+        ip = local_ip()
+        if ip == self._shown_ip:
+            return
+        self._shown_ip = ip                  # 断网记成 None，重新连上会再显示一次
+        if ip is None:
+            return
+        pages = ip_pages(ip)
+        with self._lock:
+            version = self._latest.version if self._latest is not None else 0
+            self._caption = _Caption((), now, version, pages,
+                                     seconds=2 * len(pages) * PAGE_SECONDS)
+        log.info("LED shows the address: http://%s:8080", ip)
 
     def _draw_caption(self, columns: tuple[int, ...], offset: int) -> None:
         """整屏画一帧字幕：屏幕第 x 列显示整句的第 x + offset 列。"""

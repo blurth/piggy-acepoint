@@ -139,8 +139,10 @@ class WebDisplay(Display):
         on_action: Callable[[str, Action], None] | None = None,
         on_audio=None,
         audio_config=None,
+        on_poweroff: Callable[[], None] | None = None,
     ) -> None:
         self._audio_config = audio_config or AudioConfig()
+        self._on_poweroff = on_poweroff
         self._on_audio = on_audio
         self.config = config
         self._on_action = on_action
@@ -217,6 +219,7 @@ class WebDisplay(Display):
                 initial=json.dumps(self._state()),
                 preview=self.config.preview,
                 allow_manual=self.config.allow_manual,
+                allow_poweroff=self.config.allow_poweroff and self._on_poweroff is not None,
             )
 
         @app.get("/api/state")
@@ -306,6 +309,20 @@ class WebDisplay(Display):
                 return jsonify(error="preview requires 0:0"), 409
             if not self._on_audio({"test": True}):
                 return jsonify(error="control queue full"), 429
+            return jsonify(ok=True), 202
+
+        @app.post("/api/system/poweroff")
+        def api_poweroff():
+            from acepoint import power
+
+            if not self.config.allow_poweroff or self._on_poweroff is None:
+                return jsonify(error="poweroff disabled"), 403
+            body = request.get_json(silent=True) or {}
+            if body.get("confirm") is not True:
+                return jsonify(error="confirm required"), 400
+            if not power.can_poweroff():
+                return jsonify(error="no permission", hint=power.SUDOERS_HINT), 403
+            self._on_poweroff()
             return jsonify(ok=True), 202
 
         @app.get("/healthz")

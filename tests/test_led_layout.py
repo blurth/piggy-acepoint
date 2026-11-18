@@ -274,7 +274,7 @@ def running_display():
     """起真的渲染线程，但把 _draw 换成记录调用，不碰硬件。"""
     import threading
 
-    display = LedDisplay(LedConfig(cascaded=4))
+    display = LedDisplay(LedConfig(cascaded=4, show_ip=False))
     display._device = object()
     drawn = []
     display._draw = lambda snapshot, *, dark=None, bars=(): drawn.append((dark, bars))
