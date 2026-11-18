@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+import time
 
 log = logging.getLogger(__name__)
 
@@ -50,7 +51,24 @@ def nopasswd_allows(listing: str, command: str) -> bool:
     return False
 
 
-def poweroff() -> None:
-    """发起关机，不等它完成（systemd 会来停掉本进程）。"""
+def poweroff(*, linger: float = 60.0) -> bool:
+    """发起关机，成功后原地等系统来停掉本进程。
+
+    不能发完就退出：acepoint.service 是 Restart=always、KillMode 默认 control-group，
+    主进程一退出，systemd 会把同一个 cgroup 里还没跑完的 sudo/systemctl 一起杀掉，
+    5 秒后再把服务拉起来 —— 网页上看就是"点了关机没反应"（2026-11 实机）。
+    所以同步等 systemctl 把关机任务交给 systemd（它很快就返回），然后不退出，
+    让关机流程按顺序来停我们。
+    """
     log.warning("powering off on request from the web scoreboard")
-    subprocess.Popen(["sudo", "-n", *POWEROFF])
+    try:
+        result = subprocess.run(["sudo", "-n", *POWEROFF], capture_output=True, text=True,
+                                timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        log.exception("关机命令执行失败")
+        return False
+    if result.returncode != 0:
+        log.error("关机命令失败（%s）：%s", result.returncode, result.stderr.strip())
+        return False
+    time.sleep(linger)
+    return True

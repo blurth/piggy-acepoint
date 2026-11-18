@@ -133,3 +133,27 @@ def test_the_exact_nopasswd_grant_counts():
     assert power.nopasswd_allows("    (ALL) NOPASSWD: ALL\n", "/usr/bin/systemctl poweroff")
     assert not power.nopasswd_allows(
         "    (root) NOPASSWD: /usr/bin/systemctl poweroff --force\n", "/usr/bin/systemctl poweroff")
+
+
+def test_poweroff_waits_for_systemctl_and_does_not_exit(monkeypatch):
+    """发完关机就退出的话，systemd 会把还没跑完的 systemctl 一起杀掉再重启服务。"""
+    import subprocess
+
+    calls, slept = [], []
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: (
+        calls.append(cmd), subprocess.CompletedProcess(cmd, 0, "", ""))[1])
+    monkeypatch.setattr(power.time, "sleep", slept.append)
+    assert power.poweroff(linger=60) is True
+    assert calls == [["sudo", "-n", "/usr/bin/systemctl", "poweroff"]]
+    assert slept == [60]
+
+
+def test_failed_poweroff_returns_without_lingering(monkeypatch):
+    import subprocess
+
+    slept = []
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(
+        cmd, 1, "", "sudo: a password is required"))
+    monkeypatch.setattr(power.time, "sleep", slept.append)
+    assert power.poweroff() is False
+    assert slept == []
