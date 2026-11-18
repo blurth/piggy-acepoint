@@ -19,6 +19,14 @@ GESTURE_ACTIONS: dict[str, Action] = {
 }
 
 
+def gesture_actions(config: ScoringConfig) -> dict[str, Action]:
+    """这套配置下实际生效的手势 -> 动作。"""
+    actions = dict(GESTURE_ACTIONS)
+    if config.thumb_up_scores_opponent:
+        actions["Thumb_Up"] = Action.INCREMENT_OPPONENT
+    return actions
+
+
 class GestureFSM:
     """单个半场的手势状态机。
 
@@ -30,6 +38,7 @@ class GestureFSM:
     def __init__(self, side: str, config: ScoringConfig) -> None:
         self.side = side
         self.config = config
+        self.actions = gesture_actions(config)
         self._current: str | None = None
         self._since: float = 0.0
         self._seen = 0                      # 本次保持中真正识别到的次数（不含容忍窗口）
@@ -43,9 +52,9 @@ class GestureFSM:
         """该手势需要保持多久。清零手势门槛更高，防误触。"""
         if gesture is None:
             return 0.0
-        if GESTURE_ACTIONS.get(gesture) is Action.RESET:
+        if self.actions.get(gesture) is Action.RESET:
             return self.config.reset_hold_seconds
-        if gesture in GESTURE_ACTIONS:
+        if gesture in self.actions:
             return self.config.hold_seconds
         return 0.0
 
@@ -86,7 +95,7 @@ class GestureFSM:
             # 采样点掉了就永远触发不了，实测成功率会从 91% 掉到 55%
             effective = self._pending[0]
 
-        action = GESTURE_ACTIONS.get(effective)
+        action = self.actions.get(effective)
         if action is None:
             return None
 

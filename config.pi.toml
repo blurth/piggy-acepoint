@@ -5,7 +5,7 @@
 
 [recognition]
 model_path = "models/gesture_recognizer.task"
-min_confidence = 0.6
+min_confidence = 0.57                 # 手势分数过这个才算数。2026-11 用户由 0.6 调到 0.57
 min_hand_detection_confidence = 0.5
 num_hands = 2
 per_source_recognizer = true          # 每路一个实例。需求 §6 原本写的是共用一个省内存，
@@ -40,10 +40,11 @@ crop_cy_ratio = 0.5
 # 标定办法：录一段真实比划，跑 scripts/compare_roi.py --ratios 扫中心和大小。
 
 [scoring]
-hold_seconds = 0.25                   # 加分(Victory/Pointing_Up) / 撤销(Thumb_Down) 保持时长。
-                                      # 2026-11 球场实测嫌慢，由 0.5 减半。相位扫描：实机 3.8~5fps 下
+hold_seconds = 0.2                    # 加分(Victory/Pointing_Up/Thumb_Up) / 撤销(Thumb_Down) 保持时长。
+                                      # 2026-11 球场实测嫌慢：0.5 -> 0.25 -> 0.2。相位扫描：实机 3.8~5fps 下
                                       # 触发率和 0.5 时完全一样（卡的是 hold_min_samples，不是时长），
-                                      # ≤0.2 秒的闪现仍是 0%，手势出现到计分从约 0.7 秒降到 0.4~0.6 秒
+                                      # ≤0.2 秒的闪现仍是 0%。0.2 = 两次采样的间隔，所以通常认到第 2 次
+                                      # 就计分；识别耗时抖动让间隔不足 0.2 时要等第 3 次
 hold_grace_seconds = 0.4              # 保持期间容忍手势丢检多久(约 2 个采样点)
 hold_min_samples = 2                  # 必须真正识别到几次才算数(防单次闪现误触)。
                                       # 球馆实测误加分偏多的话优先调高这个，而不是调 hold_seconds
@@ -56,6 +57,9 @@ cooldown_seconds = 2.0                # 计分后该半场冷却。2026-11 由 5
                                       # 连续计分时第二次举手常被冷却挡掉。下限约束：手一直举着
                                       # 超过 冷却 + 约 0.3 秒 就会再加一分，球场上出现一次举手
                                       # 加两分就调回 3.0
+thumb_up_scores_opponent = true       # 拇指向上 = 给对面半场加分。现在只接了一个摄像头，对面的人
+                                      # 看不到，这边的人替他比。两边都接上摄像头后改成 false，
+                                      # 否则两边可能为同一分各加一次
 
 [game]
 enabled = true                        # 关掉就是纯计分器，不判胜负

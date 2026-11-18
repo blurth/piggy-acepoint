@@ -14,12 +14,14 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
 
 from acepoint.config import RecognitionConfig
+from acepoint.fsm import GESTURE_ACTIONS
 
 log = logging.getLogger(__name__)
 
@@ -91,8 +93,11 @@ class GestureReader:
     """把 BGR 画面变成手势名。"""
 
     _SHARED = "__shared__"
+    # 哪些手势是计分指令（用来判两只手是否互相矛盾）；默认就是状态机那张表
+    actions: Mapping[str, object] = GESTURE_ACTIONS
 
-    def __init__(self, config: RecognitionConfig, sides: list[str], model_path: Path) -> None:
+    def __init__(self, config: RecognitionConfig, sides: list[str], model_path: Path,
+                 actions: Mapping[str, object] | None = None) -> None:
         if not model_path.exists():
             raise ModelMissingError(model_path)
 
@@ -104,6 +109,8 @@ class GestureReader:
         self._mp = mp
         self.config = config
         self.per_source = config.per_source_recognizer
+        if actions is not None:
+            self.actions = dict(actions)
 
         base_options, self.inference_threads = threaded_base_options(
             mp_python.BaseOptions, model_path, config.inference_threads)
@@ -158,15 +165,14 @@ class GestureReader:
 
         hands = len(result.gestures)
         # 多只手给出不同计分指令时拒绝本帧，避免最高分在两只手之间跳动。
-        commands = {
-            candidate.category_name
+        # 同一动作的不同手势（比耶和食指都是加分）不算矛盾
+        actions = {
+            self.actions[candidate.category_name]
             for hand in result.gestures
             for candidate in hand
-            if candidate.category_name in ("Victory", "Pointing_Up", "Thumb_Down", "Open_Palm")
+            if candidate.category_name in self.actions
             and candidate.score >= self.config.min_confidence
         }
-        actions = {"increment" if name in ("Victory", "Pointing_Up") else name
-                   for name in commands}
         if len(actions) > 1:
             return Observation(confidence=best_score, hands=hands, raw="Ambiguous")
         if best_name is None:

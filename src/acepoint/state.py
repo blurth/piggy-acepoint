@@ -20,6 +20,12 @@ class Action(Enum):
     INCREMENT = "increment"
     DECREMENT = "decrement"
     RESET = "reset"
+    # 给对面半场加分（scoring.thumb_up_scores_opponent）。只在状态机和引擎之间
+    # 流转：引擎落账前换成"对面 INCREMENT"，比分板永远见不到它
+    INCREMENT_OPPONENT = "increment_opponent"
+
+
+OPPONENT = {"left": "right", "right": "left"}
 
 
 @dataclass(frozen=True)
@@ -146,6 +152,8 @@ class ScoreBoard:
         """
         if side not in self._score:
             raise ValueError(f"未知半场: {side!r}")
+        if action is Action.INCREMENT_OPPONENT:
+            raise ValueError("INCREMENT_OPPONENT 要先由引擎换成对面半场的 INCREMENT")
         with self._lock:
             if action is Action.RESET:
                 self._score["left"] = self._score["right"] = 0

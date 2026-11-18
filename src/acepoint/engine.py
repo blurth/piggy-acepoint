@@ -23,11 +23,11 @@ import numpy as np
 from acepoint.config import Config
 from acepoint.audio.service import AudioService
 from acepoint.displays import build_display
-from acepoint.fsm import GestureFSM
+from acepoint.fsm import GestureFSM, gesture_actions
 from acepoint.recognition import GestureReader, Observation
 from acepoint.recorder import SessionRecorder
 from acepoint.sources import Frame, FrameSource, build_sources
-from acepoint.state import Action, ScoreBoard, SideStatus, Telemetry
+from acepoint.state import OPPONENT, Action, ScoreBoard, SideStatus, Telemetry
 
 log = logging.getLogger(__name__)
 
@@ -101,6 +101,7 @@ class ScoringEngine:
                 config.recognition,
                 list(self.sources),
                 config.resolve(config.recognition.model_path),
+                gesture_actions(config.scoring),
             )
             if config.recognition.parallel and len(self.sources) > 1:
                 if config.recognition.per_source_recognizer:
@@ -303,27 +304,33 @@ class ScoringEngine:
         # 向前跳会让所有冷却瞬间失效，向后跳会把半场冻死
         action = self.fsms[side].feed(observation.gesture, time.monotonic(),
                                       fresh=not repeated)
+        label = None
         if action is not None:
+            # 拇指向上：这一侧看到的手势，分加给对面
+            target = side
+            if action is Action.INCREMENT_OPPONENT:
+                target, action = OPPONENT[side], Action.INCREMENT
+            label = action.value if target == side else f"{action.value} {target} (by {side})"
             before = self.board.snapshot().version
-            snapshot = self._apply_score(side, action)
+            snapshot = self._apply_score(target, action)
             if snapshot.version == before:
                 log.info("%s %s ignored — %s already won this game",
-                         side, action.value, snapshot.winner)
+                         target, label, snapshot.winner)
             elif snapshot.winner:
                 log.info("%s %s -> %s  ** %s WINS **",
-                         side, action.value, snapshot.text, snapshot.winner.upper())
+                         target, label, snapshot.text, snapshot.winner.upper())
             else:
-                log.info("%s %s -> %s", side, action.value, snapshot.text)
+                log.info("%s %s -> %s", target, label, snapshot.text)
 
         if getattr(self, "recorder", None) is not None:
-            self._record(side, sample, now, action)
+            self._record(side, sample, now, label)
 
         if self.display.wants_preview:
             self._publish_preview(side, frame.image, observation)
 
     # ------------------------------------------------------------------ 录像
 
-    def _record(self, side: str, sample: _Sample, now: float, action: Action | None) -> None:
+    def _record(self, side: str, sample: _Sample, now: float, action: str | None) -> None:
         """录这一帧 + 记一行 events.csv。出任何错都只关掉录像，不碰计分。"""
         try:
             segment, video_s = "", None
@@ -338,7 +345,7 @@ class ScoringEngine:
                 detected=observation.gesture, gesture=status.gesture,
                 held=status.held if status.gesture else None, required=status.required or None,
                 cooldown=status.cooldown_remaining or None,
-                action=action.value if action is not None else None,
+                action=action,
                 score=self.board.snapshot().text,
             )
         except Exception:                        # noqa: BLE001

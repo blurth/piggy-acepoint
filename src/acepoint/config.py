@@ -99,6 +99,9 @@ class ScoringConfig:
     # 必须真正识别到多少次才算数（需求 §5.2「连续多次采样中保持」）。
     # 只有容忍窗口没有这条的话，手势闪现一次就能凑够时长触发 —— 实测误触率 98%。
     hold_min_samples: int = 2
+    # 拇指向上 = 给对面半场加分。只接了一个摄像头时的过渡办法：对面的人看不到，
+    # 这边的人替他比。两边都有摄像头后关掉，否则两边可能为同一分各加一次
+    thumb_up_scores_opponent: bool = False
 
     def __post_init__(self) -> None:
         if self.hold_min_samples < 1:

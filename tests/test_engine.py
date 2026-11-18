@@ -350,3 +350,31 @@ def test_parallel_is_skipped_when_only_one_side_is_alive(parallel_config):
         assert engine._workers is None
     finally:
         engine.close()
+
+
+def test_thumb_up_scores_the_opposite_half_court(config, tmp_path):
+    """单摄像头过渡：左边看到拇指向上，分加给右边；计分日志里写清楚是谁比的。"""
+    import csv
+
+    from acepoint.config import RecordConfig, ScoringConfig
+    from acepoint.recognition import Observation
+
+    config = replace(config, scoring=ScoringConfig(hold_seconds=0.2, hold_min_samples=2,
+                                                   thumb_up_scores_opponent=True),
+                     record=RecordConfig(enabled=True, dir=str(tmp_path), video=False))
+    engine = ScoringEngine(config)
+    try:
+        engine.reader.observe = lambda side, roi: Observation(
+            gesture="Thumb_Up" if side == "left" else None, confidence=0.9, raw="Thumb_Up")
+        engine.sources.pop("right").close()
+        for i in range(4):
+            engine._tick("left", engine.sources["left"], i * 0.2)
+            engine._last_frame.pop("left", None)     # 每拍都当新帧
+            time.sleep(0.11)
+        assert engine.board.snapshot().text == "0:1"
+        session = engine.recorder.dir
+    finally:
+        engine.close()
+    with (session / "events.csv").open(encoding="utf-8") as fh:
+        actions = [row["action"] for row in csv.DictReader(fh) if row["action"]]
+    assert actions == ["increment right (by left)"]
