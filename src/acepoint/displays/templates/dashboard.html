@@ -242,10 +242,25 @@ for (const name of ["muted", "volume", "mode", "style"]) {
 }
 document.getElementById("audio-test").addEventListener("click", () => audioRequest("/api/audio/test", {}));
 
+// 二次确认放在页面里而不是 confirm()：有的内嵌浏览器会直接吞掉原生弹窗（当作取消），
+// 结果就是"点了没反应"
 const powerButton = document.getElementById("poweroff");
+let powerArmed = null;
 if (powerButton) powerButton.addEventListener("click", async () => {
-  if (!confirm("确定关机？关机后计分停止，要重新插电才能开机。")) return;
   const message = document.getElementById("power-message");
+  if (!powerArmed) {
+    powerButton.textContent = "再点一次确认关机";
+    message.textContent = "关机后计分停止，要重新插电才能开机。5 秒内再点一次确认。";
+    powerArmed = setTimeout(() => {
+      powerArmed = null;
+      powerButton.textContent = "关机";
+      message.textContent = "";
+    }, 5000);
+    return;
+  }
+  clearTimeout(powerArmed);
+  powerArmed = null;
+  powerButton.textContent = "关机";
   powerButton.disabled = true;
   try {
     const response = await fetch("/api/system/poweroff", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({confirm:true})});
