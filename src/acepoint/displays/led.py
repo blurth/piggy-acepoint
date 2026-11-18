@@ -18,15 +18,23 @@
 
 只有一方有状态时状态条占满整个底边（32px）；两方同时有就各用自己那半边。
 
+氛围台词（语音模块说"三连击！""赛点！"之类的时候）整屏让给字幕：8px 中文
+点阵字（led_glyphs.json，由 scripts/build_led_glyphs.py 从 Fusion Pixel Font 生成），
+放得下就居中静止，放不下就先停在开头、滚到结尾再停，总共 caption_seconds 秒，
+然后切回比分。比分变了、或者有人开始比手势，字幕立刻让位 —— 比分和识别反馈优先。
+
 渲染放在独立线程：闪烁要 sleep，绝不能卡住识别主循环。
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import time
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 
 from acepoint.config import LedConfig
 from acepoint.displays.base import Display
@@ -41,6 +49,9 @@ _TICK = 0.25              # 渲染线程的心跳，决定闪烁节奏的精度
 _ANIMATION_TICK = 0.05    # 状态条在动的时候改用这个心跳：遥测一秒只来四五次，自己补帧才顺
 _HOLD_MIN_FRACTION = 0.1  # 手势刚被认出、进度还是 0 时进度条的最短长度（占可用宽度）
 _MAX_EXTRAPOLATION = 1.0  # 遥测断了的话最多按上一次的速度往前推这么久，免得条自己跑飞
+_CAPTION_TICK = 0.03      # 字幕滚动时的心跳：一秒二三十个像素，太慢的心跳看着一顿一顿
+_CAPTION_HOLD = 0.8       # 长字幕在开头和结尾各停这么久，留时间读
+_GLYPHS = Path(__file__).with_name("led_glyphs.json")
 
 BarPixels = tuple[tuple[str, str, int], ...]     # (半场, "hold" | "cooldown", 点亮的像素数)
 
@@ -56,6 +67,45 @@ class _Bar:
     at: float              # 遥测到达的时刻（monotonic）
 
 
+@dataclass(frozen=True)
+class _Caption:
+    """正在显示的一句氛围台词。"""
+
+    columns: tuple[int, ...]   # 整句的点阵，每列一个整数，第 r 位 = 第 r 行
+    start: float               # 开始显示的时刻（monotonic）
+    version: int               # 开始时的比分版本；比分一变字幕就让位
+
+
+@lru_cache(maxsize=1)
+def _glyph_table() -> dict[str, tuple[int, list[int]]]:
+    data = json.loads(_GLYPHS.read_text(encoding="utf-8"))
+    return {ch: (width, columns) for ch, (width, columns) in data["glyphs"].items()}
+
+
+def caption_columns(text: str) -> tuple[int, ...]:
+    """把一句台词拼成点阵列。字模表里没有的字跳过（表由语音包台词生成，正常都有）。"""
+    table = _glyph_table()
+    columns: list[int] = []
+    for ch in text:
+        glyph = table.get(ch)
+        if glyph is not None:
+            columns.extend(glyph[1])
+    return tuple(columns)
+
+
+def caption_offset(width: int, elapsed: float, total: float, screen: int) -> int:
+    """此刻字幕第 0 列应该画在屏幕的哪一列之左多少（负数 = 往右缩进）。
+
+    放得下：居中不动。放不下：开头停 _CAPTION_HOLD，匀速滚到最后一屏，再停 _CAPTION_HOLD。
+    """
+    if width <= screen:
+        return -((screen - width) // 2)
+    travel = width - screen
+    moving = max(total - 2 * _CAPTION_HOLD, 0.1)
+    t = min(max(elapsed - _CAPTION_HOLD, 0.0), moving)
+    return round(travel * t / moving)
+
+
 class LedDisplay(Display):
     wants_preview = False
 
@@ -69,6 +119,8 @@ class LedDisplay(Display):
         self._thread: threading.Thread | None = None
         self._device = None
         self._drawn_flash = -1
+        self._caption: _Caption | None = None
+        self._caption_seq = None          # 第一次遥测只记下序号，不把开机前的旧台词翻出来
 
     # ------------------------------------------------------------ 生命周期
 
@@ -111,11 +163,36 @@ class LedDisplay(Display):
                  self.config.cascaded, self.config.digits_per_side, self.config.brightness)
 
     def update(self, telemetry: Telemetry) -> None:
-        bars = self._bars_from(telemetry, time.monotonic())
+        now = time.monotonic()
+        bars = self._bars_from(telemetry, now)
+        caption = self._caption_from(telemetry, now)
         with self._lock:
             self._latest = telemetry.snapshot
             self._bars = bars
+            if caption is not None:
+                self._caption = caption
+            current = self._caption
+            # 比分变了、或者有人开始比手势：字幕让位，比分和识别反馈优先
+            if current is not None and (telemetry.snapshot.version != current.version
+                                        or any(bar.kind == "hold" for bar in bars)):
+                self._caption = None
         self._wake.set()
+
+    def _caption_from(self, telemetry: Telemetry, now: float) -> _Caption | None:
+        audio = telemetry.audio or {}
+        seq = audio.get("caption_seq")
+        previous, self._caption_seq = self._caption_seq, seq
+        if previous is None or seq == previous or not self.config.show_captions:
+            return None
+        text = audio.get("caption") or ""
+        try:
+            columns = caption_columns(text)
+        except (OSError, ValueError):
+            log.exception("LED 字模表读取失败，不显示字幕")
+            return None
+        if not columns:
+            return None
+        return _Caption(columns, now, telemetry.snapshot.version)
 
     def _bars_from(self, telemetry: Telemetry, now: float) -> tuple[_Bar, ...]:
         """从遥测里取出各方的状态条：正在识别优先，其次是冷却。
@@ -222,15 +299,37 @@ class LedDisplay(Display):
         blink_at = 0.0
         winner_lit = True
         animating = False
+        captioning = False
 
         while not self._stop.is_set():
-            self._wake.wait(timeout=_ANIMATION_TICK if animating else _TICK)
+            self._wake.wait(timeout=_CAPTION_TICK if captioning
+                            else _ANIMATION_TICK if animating else _TICK)
             self._wake.clear()
+            captioning = False
             with self._lock:
                 snapshot = self._latest
                 bars = self._bars
             if snapshot is None:
                 continue
+
+            caption = self._active_caption(time.monotonic())
+            if caption is not None:
+                offset = caption_offset(len(caption.columns), time.monotonic() - caption.start,
+                                        self.config.caption_seconds, self.config.half_width * 2)
+                state = ("caption", caption.start, offset)
+                if state != drawn:
+                    try:
+                        self._draw_caption(caption.columns, offset)
+                    except Exception:
+                        log.exception("LED render failed; retrying on next update")
+                        drawn = None
+                        continue
+                    drawn = state
+                # 比分在字幕期间不会变（变了字幕就撤了），闪烁也不用补
+                self._drawn_flash = snapshot.flash_seq
+                captioning = True
+                continue
+
             # 像素数没变就不会重画，所以补帧只在条真的动了一格时才写 SPI
             pixels = self._bar_pixels(bars, time.monotonic())
             animating = bool(pixels)
@@ -264,6 +363,32 @@ class LedDisplay(Display):
                     drawn = None
                     continue
             drawn, self._drawn_flash = state, snapshot.flash_seq
+
+    def _active_caption(self, now: float) -> _Caption | None:
+        with self._lock:
+            caption = self._caption
+            if caption is not None and now - caption.start >= self.config.caption_seconds:
+                self._caption = caption = None
+        return caption
+
+    def _draw_caption(self, columns: tuple[int, ...], offset: int) -> None:
+        """整屏画一帧字幕：屏幕第 x 列显示整句的第 x + offset 列。"""
+        from luma.core.render import canvas
+
+        half = self.config.half_width
+        width = half * 2
+        points = []
+        for x in range(width):
+            index = x + offset
+            if not 0 <= index < len(columns):
+                continue
+            # reverse_blocks 时画布左半边显示在屏幕右半边，字幕得反着放回去
+            px = (x + half) % width if self.config.reverse_blocks else x
+            bits = columns[index]
+            points.extend((px, row) for row in range(8) if bits >> row & 1)
+        with canvas(self._device) as draw:
+            if points:
+                draw.point(points, fill="white")
 
     def _flash(self, snapshot: Snapshot) -> None:
         for _ in range(_FLASH_TIMES):

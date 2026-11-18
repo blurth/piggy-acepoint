@@ -90,6 +90,9 @@ show_match_point = true               # 赛点时在该侧底部画一条下划�
 show_hold_progress = true             # 识别条：底部一条实线，一认出手势就亮，从该方外侧边缘
                                       # 向对面变长，涨满即计分 —— 不看网页时唯一的即时反馈
 show_cooldown = true                  # 冷却条：计分后底部一条虚线，缩完才能再比手势
+show_captions = true                  # 氛围台词（三连击、赛点、逆转……）用 8px 中文整屏滚动，
+caption_seconds = 5.0                 # 显示这么久再切回比分。比分变了或有人比手势会提前切回。
+                                      # 台词来自下面的 [audio]，所以 [audio] 必须开着
 bus_speed_hz = 500000                 # 实机实测：8MHz 下四块屏时亮时灭，0.5MHz 稳定。
                                       # 根因是 3.3V 电平余量不足（见 deploy/README.md），
                                       # 加了电平转换后可以再往上调
@@ -128,9 +131,11 @@ segment_minutes = 10                  # 分段，热拔电最多坏掉最后一�
 min_free_gb = 2.0                     # SD 卡剩余低于此值停止录像，日志照记
 
 [audio]
-# 安装 pip install -e ".[audio]"，运行 acepoint --audio-test 试听后开启。
-enabled = false
-backend = "pygame"
+# 现在没接音响：开着语音模块只为让它挑台词，backend = "null" 不出声，
+# 台词由点阵屏字幕显示（[display.led] show_captions）。
+# 接上音响后：pip install -e ".[audio]"，backend 改回 "pygame"，acepoint --audio-test 试听。
+enabled = true
+backend = "null"
 pack_root = "audio"
 style = "friends"
 mode = "balanced"

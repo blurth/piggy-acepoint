@@ -28,7 +28,7 @@ acepoint = "acepoint.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-acepoint = ["displays/templates/*.html"]
+acepoint = ["displays/templates/*.html", "displays/led_glyphs.json", "displays/LED_FONT_LICENSE.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

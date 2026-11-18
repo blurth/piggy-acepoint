@@ -231,11 +231,18 @@ class LedConfig:
     # 计分后的冷却期在底部画一条逐渐缩短的虚线：缩完才能再比手势。
     # 没有它的话冷却期间比手势屏上毫无反应，看着像识别失灵
     show_cooldown: bool = True
+    # 语音模块说氛围台词（三连击、赛点、逆转……）时，点阵屏先用 8px 中文把台词
+    # 滚动显示 caption_seconds 秒再切回比分。没接音响时这是唯一的氛围反馈；
+    # 要台词就得开 [audio]（没音响用 backend = "null"）
+    show_captions: bool = True
+    caption_seconds: float = 5.0
 
     def __post_init__(self) -> None:
         if self.cascaded < 2 or self.cascaded % 2:
             raise ConfigError(
                 f"display.led.cascaded 必须是 >=2 的偶数（左右各一半），当前 {self.cascaded}")
+        if self.caption_seconds <= 0:
+            raise ConfigError("display.led.caption_seconds 必须 > 0")
 
     @property
     def half_width(self) -> int:
