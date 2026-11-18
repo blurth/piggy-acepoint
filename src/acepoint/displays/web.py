@@ -140,9 +140,12 @@ class WebDisplay(Display):
         on_audio=None,
         audio_config=None,
         on_poweroff: Callable[[], None] | None = None,
+        recordings=None,
     ) -> None:
         self._audio_config = audio_config or AudioConfig()
         self._on_poweroff = on_poweroff
+        # 有 summary() / clear() 的对象（引擎）；None 表示不提供录像管理
+        self._recordings = recordings
         self._on_audio = on_audio
         self.config = config
         self._on_action = on_action
@@ -157,6 +160,9 @@ class WebDisplay(Display):
     def wants_preview(self) -> bool:
         """只有真的有人在看 MJPEG 流时才要预览图 —— 没人看就别浪费 CPU 编码。"""
         return self.config.preview and self._previews.watched
+
+    def _recordings_enabled(self) -> bool:
+        return self.config.allow_clear_recordings and self._recordings is not None
 
     def _state(self) -> dict:
         with self._latest_lock:
@@ -220,6 +226,7 @@ class WebDisplay(Display):
                 preview=self.config.preview,
                 allow_manual=self.config.allow_manual,
                 allow_poweroff=self.config.allow_poweroff and self._on_poweroff is not None,
+                allow_recordings=self._recordings_enabled(),
             )
 
         @app.get("/api/state")
@@ -330,6 +337,23 @@ class WebDisplay(Display):
             log.warning("poweroff requested from %s", request.remote_addr)
             self._on_poweroff()
             return jsonify(ok=True), 202
+
+        @app.get("/api/recordings")
+        def api_recordings():
+            if not self._recordings_enabled():
+                return jsonify(error="recordings management disabled"), 403
+            return jsonify(self._recordings.recordings_summary())
+
+        @app.post("/api/recordings/clear")
+        def api_recordings_clear():
+            if not self._recordings_enabled():
+                return jsonify(error="recordings management disabled"), 403
+            body = request.get_json(silent=True) or {}
+            if body.get("confirm") is not True:
+                return jsonify(error="confirm required"), 400
+            log.warning("clearing recordings on request from %s", request.remote_addr)
+            result = self._recordings.clear_recordings()
+            return jsonify({**result, **self._recordings.recordings_summary()})
 
         @app.get("/healthz")
         def healthz():

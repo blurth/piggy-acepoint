@@ -26,6 +26,7 @@ from acepoint.audio.service import AudioService
 from acepoint.displays import build_display
 from acepoint.fsm import GestureFSM, gesture_actions
 from acepoint.recognition import GestureReader, Observation
+from acepoint import recorder as recordings
 from acepoint.recorder import SessionRecorder
 from acepoint.sources import Frame, FrameSource, build_sources
 from acepoint.state import OPPONENT, Action, ScoreBoard, SideStatus, Telemetry
@@ -98,7 +99,8 @@ class ScoringEngine:
             self.audio = AudioService(config.audio, config.game, config.resolve(config.audio.pack_root))
             self.display = build_display(config, on_action=self._enqueue_manual,
                                          on_audio=self._enqueue_audio, audio_config=config.audio,
-                                         on_poweroff=self.request_poweroff)
+                                         on_poweroff=self.request_poweroff,
+                                         recordings=self)
             self.display.start()
             self.reader = GestureReader(
                 config.recognition,
@@ -207,6 +209,18 @@ class ScoringEngine:
 
     def stop(self) -> None:
         self._stop = True
+
+    def recordings_summary(self) -> dict:
+        """网页"录像"区域用：录像占了多少、盘还剩多少。网页线程调用，只读文件系统。"""
+        recorder = getattr(self, "recorder", None)
+        return recordings.summarize(self.config.resolve(self.config.record.dir),
+                                    recorder.dir if recorder is not None else None)
+
+    def clear_recordings(self) -> dict:
+        """删掉以前的录像和日志，正在录的这次保留（文件还开着）。"""
+        recorder = getattr(self, "recorder", None)
+        return recordings.clear(self.config.resolve(self.config.record.dir),
+                                recorder.dir if recorder is not None else None)
 
     def request_poweroff(self) -> None:
         """网页线程调用：只做标记，收尾和关机都在主线程里做。"""

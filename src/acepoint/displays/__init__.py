@@ -22,6 +22,7 @@ def build_display(
     on_audio=None,
     audio_config=None,
     on_poweroff: Callable[[], None] | None = None,
+    recordings=None,
 ) -> CompositeDisplay:
     """按 display.backends 组装显示后端。LED 装不上时降级为终端输出。"""
     displays: list[Display] = []
@@ -32,7 +33,8 @@ def build_display(
             from acepoint.displays.web import WebDisplay
 
             displays.append(WebDisplay(config.display.web, on_action=on_action, on_audio=on_audio,
-                                       audio_config=audio_config, on_poweroff=on_poweroff))
+                                       audio_config=audio_config, on_poweroff=on_poweroff,
+                                       recordings=recordings))
         elif name == "led":
             try:
                 from acepoint.displays.led import LedDisplay

@@ -212,6 +212,8 @@ class WebConfig:
     # 网页上的"关机"按钮：没有关机键的设备拔电前先正常关机。同一网络里谁都能点，
     # 只在自己的网络（手机热点）里用。需要设备上授权 sudo，见 acepoint/power.py
     allow_poweroff: bool = False
+    # 网页上的"录像"区域：看录像占了多少空间，一键清空（正在录的那次保留）
+    allow_clear_recordings: bool = False
 
 
 @dataclass(frozen=True)

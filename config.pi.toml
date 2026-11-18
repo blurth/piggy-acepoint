@@ -80,6 +80,7 @@ allow_manual = true
 allow_poweroff = true                 # 网页上的"关机"按钮（没有关机键，拔电前先关机）。同一网络里
                                       # 谁都能点，只在手机热点这种自己的网络里用。设备上要先授权：
                                       # echo 'moray ALL=(root) NOPASSWD: /usr/bin/systemctl poweroff'                                       #   | sudo tee /etc/sudoers.d/acepoint-poweroff
+allow_clear_recordings = true         # 网页"录像"区域：看占用、一键清空（正在录的那次保留）
 
 [display.led]
 brightness = 24                       # 0~255，越高越费电。MAX7219 实际只有 16 档（每 16 一档）：

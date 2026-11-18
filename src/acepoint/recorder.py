@@ -32,6 +32,7 @@ import csv
 import logging
 import os
 import queue
+import re
 import shutil
 import subprocess
 import threading
@@ -300,3 +301,60 @@ def _cell(value) -> str:
     if isinstance(value, float):
         return f"{value:.3f}"
     return str(value)
+
+
+# ---------------------------------------------------------------- 管理（网页上的"录像"区域）
+
+_SESSION_NAME = re.compile(r"^\d{8}_\d{6}$")
+
+
+def _sessions(root: Path) -> list[Path]:
+    """root 下的会话目录。只认 <8位日期>_<6位时间> 这种名字 —— 清空时绝不碰别的东西。"""
+    try:
+        return sorted(p for p in root.iterdir() if p.is_dir() and _SESSION_NAME.match(p.name))
+    except OSError:
+        return []
+
+
+def _size(path: Path) -> int:
+    total = 0
+    for item in path.rglob("*"):
+        try:
+            if item.is_file():
+                total += item.stat().st_size
+        except OSError:
+            pass
+    return total
+
+
+def summarize(root: Path, current: Path | None) -> dict:
+    """录像占了多少、盘还剩多少。current 是正在录的那次（清空时保留）。"""
+    sessions = _sessions(root)
+    try:
+        free = shutil.disk_usage(root if root.exists() else root.parent).free
+    except OSError:
+        free = 0
+    return {
+        "sessions": len(sessions),
+        "bytes": sum(_size(s) for s in sessions),
+        "free_bytes": free,
+        "current": current.name if current is not None else None,
+    }
+
+
+def clear(root: Path, current: Path | None) -> dict:
+    """删掉除正在录的那次以外的所有会话目录。返回删了几个、腾出多少字节。"""
+    removed, freed = 0, 0
+    keep = current.resolve() if current is not None else None
+    for session in _sessions(root):
+        if keep is not None and session.resolve() == keep:
+            continue
+        size = _size(session)
+        try:
+            shutil.rmtree(session)
+        except OSError:
+            log.exception("删除录像 %s 失败", session)
+            continue
+        removed, freed = removed + 1, freed + size
+    log.warning("cleared %d recording session(s), %.1f MB freed", removed, freed / 1e6)
+    return {"removed": removed, "freed_bytes": freed}
